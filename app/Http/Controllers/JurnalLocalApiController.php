@@ -9,13 +9,7 @@ use Illuminate\Http\Request;
 
 class JurnalLocalApiController extends Controller
 {
-   /**
-     * Mengambil data sales invoices dari database lokal dengan format
-     * yang identik dengan respons API Jurnal.id dan mendukung filter.
-     *
-     * @param Request $request
-     * @return \Illuminate\Http\JsonResponse
-     */
+   
      public function getSalesInvoices(Request $request)
     {
         // Menambahkan opsi sorting baru pada validasi
@@ -31,7 +25,7 @@ class JurnalLocalApiController extends Controller
             'search_column' => 'string|in:transaction_no,person_name',
             'search_term' => 'string|min:1',
             'sort' => 'string|in:due_date,transaction_date,transaction_no,person_name,status_name,remaining,total_amount,created_at', // Validasi kolom sort
-            'order' => 'string|in:asc,desc', // Validasi urutan sort
+            'order' => 'string|in:asc,desc', 
         ]);
 
         $page = $request->input('page', 1);

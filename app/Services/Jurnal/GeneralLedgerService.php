@@ -5,37 +5,79 @@ namespace App\Services\Jurnal;
 use Carbon\Carbon;
 use Throwable;
 
-/**
- * Service untuk mengambil dan memproses laporan General Ledger (Buku Besar) dari Jurnal.id.
- * Tidak untuk sinkronisasi, tetapi untuk proxy API langsung.
- */
 class GeneralLedgerService extends JurnalBaseService
 {
-    /**
-     * Mengambil dan merangkum laporan General Ledger.
-     *
-     * @param string $startDate (Format YYYY-MM-DD)
-     * @param string $endDate   (Format YYYY-MM-DD)
-     * @return array
-     * @throws \Exception
-     */
+        public function calculateMonthlySales(array $ledgerData): array
+        {
+        $monthlySales = array_fill(0, 12, 0.0);
+
+        $accounts = $ledgerData['accounts'] ?? [];
+        $salesAccount = null;
+        foreach ($accounts as $account) {
+            if ($account['account_name'] === '(4100.0001) Pendapatan Jasa') {
+                $salesAccount = $account;
+                break;
+            }
+        }
+        if ($salesAccount) {
+            $transactions = $salesAccount['transactions'] ?? [];
+            foreach ($transactions as $item) {
+                $transaction = $item['transaction'] ?? null;
+                if (!$transaction) continue;
+
+                try {
+                    $dateStr = $transaction['date'];
+                    $month = (int) Carbon::createFromFormat('d/m/Y', $dateStr)->format('m');
+                    $monthIndex = $month - 1;
+                    if ($monthIndex >= 0 && $monthIndex < 12) {
+                        $monthlySales[$monthIndex] += (float) $transaction['credit_raw'];
+                    }
+
+                } catch (\Exception $e) {
+                    logger()->warning('Gagal parse tanggal transaksi ledger', ['date' => $dateStr ?? null]);
+                }
+            }
+        }
+        $labels = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+        $randomData = [];
+        for ($i = 0; $i < 12; $i++) {
+            $randomData[] = rand(50000000, 500000000);
+        }
+        return [
+            'labels' => $labels,
+            'series' => [
+                [
+                    'name' => 'Sales',
+                    'type' => 'bar',
+                    'data' => $monthlySales,
+                    'itemStyle' => [
+                        'color' => new \stdClass() 
+                    ]
+                ],
+                [
+                    'name' => 'Target', 
+                    'type' => 'bar',
+                    'data' => $randomData,
+                    'itemStyle' => [
+                        'color' => new \stdClass()
+                    ]
+                ]
+            ]
+        ];
+        }
     public function getSummary(string $startDate, string $endDate): array
     {
         try {
-            // Konversi format tanggal untuk Jurnal API
             $params = [
                 'start_date' => Carbon::parse($startDate)->format('d/m/Y'),
                 'end_date'   => Carbon::parse($endDate)->format('d/m/Y'),
             ];
 
-            // Panggil API Jurnal
             $response = $this->get('general_ledger', $params);
 
-            // Proses data mentah menjadi ringkasan
             return $this->processReport($response);
 
         } catch (Throwable $e) {
-            // Tangani error dari Guzzle atau Jurnal
             logger()->error('Gagal mengambil General Ledger dari Jurnal API', [
                 'message' => $e->getMessage(),
                 'trace' => $e->getTraceAsString(),
@@ -44,12 +86,6 @@ class GeneralLedgerService extends JurnalBaseService
         }
     }
 
-    /**
-     * Memproses respons JSON mentah dari Jurnal menjadi ringkasan dashboard.
-     *
-     * @param array $response
-     * @return array
-     */
     private function processReport(array $response): array
     {
         $reportData = $response['general_ledger'] ?? [];
@@ -63,19 +99,16 @@ class GeneralLedgerService extends JurnalBaseService
         $processedAccounts = [];
 
         foreach ($accounts as $account) {
-            // Ambil nilai-nilai ..._raw untuk kalkulasi
             $beginningBalance = $account['beginning_balance']['balance_raw'] ?? 0;
             $debit = $account['ending_balance']['debit_raw'] ?? 0;
             $credit = $account['ending_balance']['credit_raw'] ?? 0;
             $endingBalance = $account['ending_balance']['balance_raw'] ?? 0;
 
-            // Akumulasi total
             $totalBeginning += $beginningBalance;
             $totalDebit += $debit;
             $totalCredit += $credit;
             $totalEnding += $endingBalance;
 
-            // Simpan data akun yang sudah diproses (opsional, tapi berguna)
             $processedAccounts[] = [
                 'account_name' => $account['subheader'],
                 'beginning_balance' => $beginningBalance,
@@ -86,7 +119,6 @@ class GeneralLedgerService extends JurnalBaseService
             ];
         }
 
-        // Kembalikan sebagai struktur JSON yang rapi untuk Vue
         return [
             'summary' => [
                 'period' => $reportData['header']['period'] ?? '',
