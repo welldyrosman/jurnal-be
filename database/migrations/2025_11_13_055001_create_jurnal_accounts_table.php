@@ -12,22 +12,37 @@ return new class extends Migration
     public function up(): void
     {
         Schema::create('jurnal_accounts', function (Blueprint $table) {
-            $table->id(); // Primary key lokal
-            $table->unsignedBigInteger('jurnal_id')->unique(); // ID dari Jurnal API
-            
+            $table->id();
+
+            $table->unsignedBigInteger('jurnal_id')->unique();
+
             $table->string('name');
             $table->string('number')->index();
+
             $table->string('category')->nullable();
-            $table->unsignedBigInteger('category_id')->nullable();
-            
+            $table->unsignedBigInteger('category_id')->nullable()->index();
+
             $table->boolean('is_parent')->default(false);
-            $table->integer('indent')->default(0);
-            
-            // Untuk relasi parent-child
-            $table->foreignId('parent_id')->nullable()->constrained('jurnal_accounts')->nullOnDelete();
-            
+            $table->unsignedInteger('indent')->default(0);
+
+            $table->foreignId('parent_id')
+                ->nullable()
+                ->constrained('jurnal_accounts')
+                ->nullOnDelete();
+
+            $table->foreignId('account_grouping_id')
+                ->nullable()
+                ->constrained('account_groupings')
+                ->nullOnDelete();
+
+            $table->foreignId('budget_grouping_id')
+                ->nullable()
+                ->constrained('account_groupings')
+                ->nullOnDelete();
+
             $table->decimal('balance_amount', 20, 2)->default(0);
-            $table->timestamp('synced_at');
+            $table->timestamp('synced_at')->nullable();
+
             $table->timestamps();
         });
     }

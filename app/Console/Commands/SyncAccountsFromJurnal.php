@@ -33,16 +33,15 @@ class SyncAccountsFromJurnal extends Command
             // 4. Panggil method sync() dari service
             // Service ini (SyncAccountsService.php) sudah memiliki
             // Log::info dan Log::error di dalamnya.
-            $totalSynced = $syncService->sync(); 
-            
+            $totalSynced = $syncService->sync();
+
             $this->info("✅ Sinkronisasi COA selesai. Total akun (root level) diproses: {$totalSynced}");
             return self::SUCCESS;
-
         } catch (Throwable $e) {
             // 5. Tangkap error jika API gagal total (misal: token salah)
             $this->error('❌ Sinkronisasi COA Gagal Total.');
             $this->error('Pesan: ' . $e->getMessage());
-            $this.error('Cek file log (storage/logs/laravel.log) untuk detail trace.');
+            $this->error('Cek file log (storage/logs/laravel.log) untuk detail trace.');
             return self::FAILURE;
         }
     }

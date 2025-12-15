@@ -2,6 +2,7 @@
 
 namespace App;
 
+use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Http\JsonResponse;
 
 trait ApiResponseTrait
@@ -35,5 +36,19 @@ trait ApiResponseTrait
         }
 
         return response()->json($response, $code);
+    }
+
+    protected function easyDataTableResponse(LengthAwarePaginator $paginator, string $message = 'Data successfully retrieved'): JsonResponse
+    {
+        $formattedData = [
+            'data' => $paginator->items(),
+            'total' => $paginator->total(),
+        ];
+
+        return response()->json([
+            'status' => true,
+            'message' => $message,
+            'data' => $formattedData,
+        ], 200);
     }
 }

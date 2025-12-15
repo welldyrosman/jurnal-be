@@ -13,6 +13,10 @@ return [
     | a conventional file to locate the various service credentials.
     |
     */
+    'qontak' => [
+        'token' => env('QONTAK_TOKEN'),
+    ],
+
     'jurnal' => [
         'api_key' => env('JURNAL_API_KEY'),
         'base_url' => env('JURNAL_BASE_URL', 'https://api.jurnal.id/partner/core/api/v1/'),
