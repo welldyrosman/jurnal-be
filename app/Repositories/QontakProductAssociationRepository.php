@@ -11,10 +11,6 @@ class QontakProductAssociationRepository
         if (empty($items)) return;
 
         $now = now();
-
-        /**
-         * 1. Map CRM Deal ID -> qontak_deals.id
-         */
         $crmDealIds = collect($items)
             ->pluck('crm_deal_id')
             ->filter()

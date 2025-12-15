@@ -7,6 +7,7 @@ use App\Http\Controllers\AccountGroupingController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CompanyController;
+use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\QontakDealReportController;
 use App\Http\Controllers\ReportController;
 use Illuminate\Http\Request;
@@ -66,4 +67,7 @@ Route::resource('users', UserController::class)->only([
 ]);
 Route::get('/companies', [CompanyController::class, 'index']);
 Route::post('/companies', [CompanyController::class, 'store']);
+
+Route::get('/pipelines', [PipelineController::class, 'getpipelines']);
+
 Route::get('/mekari-test', [\App\Http\Controllers\ReportController::class, 'testMekariApi']);

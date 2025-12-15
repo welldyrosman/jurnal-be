@@ -9,6 +9,7 @@ use App\Repositories\{
     QontakProductRepository,
     QontakContactRepository,
     QontakCompanyRepository,
+    QontakPipelineRepository,
     QontakProductAssociationRepository,
 };
 use Throwable;
@@ -24,9 +25,16 @@ class SyncQontakDeals extends Command
         QontakContactRepository $contactRepo,
         QontakCompanyRepository $companyRepo,
         QontakDealRepository $dealRepo,
-        QontakProductAssociationRepository $qontakDealProductAssociationRepo
+        QontakProductAssociationRepository $qontakDealProductAssociationRepo,
+        QontakPipelineRepository $qontakPipelineRepo,
     ) {
         try {
+            $this->info('🚀 Syncing Pipelines...');
+            $this->syncEntityOnce(
+                fn() => $service->getPipelines(),
+                fn($items) => $qontakPipelineRepo->upsertMany($items)
+            );
+
             $this->info('🔄 Syncing Products...');
             $this->syncEntity(
                 fn($page) => $service->getProducts($page),
@@ -69,6 +77,21 @@ class SyncQontakDeals extends Command
     /**
      * Generic paginated sync handler
      */
+    private function syncEntityOnce(callable $fetcher, callable $handler): void
+    {
+        $res   = $fetcher();
+        $items = $res['response'] ?? [];
+
+        if (empty($items)) {
+            $this->warn('⚠ No data returned');
+            return;
+        }
+
+        $handler($items);
+
+        $this->line("  ✔ Synced (" . count($items) . " items)");
+    }
+
     private function syncEntity(callable $fetcher, callable $handler): void
     {
         $page = 1;

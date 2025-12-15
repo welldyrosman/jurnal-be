@@ -69,4 +69,8 @@ class QontakService
     {
         return $this->get('/products_association', ['page' => $page]);
     }
+    public function getPipelines(int $page = 1): array
+    {
+        return $this->get('/pipelines', ['page' => $page]);
+    }
 }
