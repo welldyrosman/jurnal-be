@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\JurnalInvoice;
 use App\Models\QontakDeal;
 use App\Services\Jurnal\BalanceSheetService;
 use App\Services\Jurnal\GeneralLedgerService;
@@ -35,16 +36,9 @@ class DashboardController extends Controller
             if ($validator->fails()) {
                 throw new ValidationException($validator);
             }
-
-
             $startDateApi = Carbon::createFromFormat('d/m/Y', $request->start_date)->format('Y-m-d');
             $endDateApi = Carbon::createFromFormat('d/m/Y', $request->end_date)->format('Y-m-d');
-
-
-
-
             $reportData = $this->balanceSheetService->getReport(['end_date' => $endDateApi]);
-
             $startDateInThisYear = Carbon::parse($endDateApi)->startOfYear()->format('Y-m-d');
             $endDateInThisYear = Carbon::parse($endDateApi)->endOfYear()->format('Y-m-d');
             $year = Carbon::parse($endDateApi)->endOfYear()->format('Y');
@@ -55,6 +49,7 @@ class DashboardController extends Controller
                 ->groupBy('crm_stage_name')
                 ->orderBy('total', 'DESC')
                 ->get();
+            //    $agingData= JurnalInvoice::
             $dashboardData = [
                 'ledger_summary' => $ledgerInYear,
                 'balance_sheet'  => $reportData,
@@ -62,6 +57,7 @@ class DashboardController extends Controller
                 'chart_sales'    => $chartData,
                 'chart_in_out'   => $lineChartInOUt,
                 'deal_by_stage'  => $data,
+                'sumpipeline'     => QontakDeal::where('crm_stage_name', 'Won')->sum('amount'),
             ];
 
             return $this->successResponse($dashboardData, 'Laporan berhasil diambil');

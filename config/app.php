@@ -14,7 +14,10 @@ return [
     */
 
     'name' => env('APP_NAME', 'Laravel'),
-
+    'mekari_base_url' => env('MEKARI_BASE_URL', 'https://api.mekari.com'),
+    'hmac_username' => env('QONTAK_HMAC_USERNAME', 'MOkaZr3AulXIoMsV'),
+    'hmac_secret' => env('QONTAK_HMAC_SECRET', 'TU9yva0PVF621DU3BoGnGcn2mf0gJK4d'),
+    'sso_user_id' => env('QONTAK_SSO_USER_ID', '7f3d64a4-6f4f-4b1a-bd7e-5c120028da64'),
     /*
     |--------------------------------------------------------------------------
     | Application Environment

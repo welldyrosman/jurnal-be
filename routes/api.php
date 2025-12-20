@@ -8,6 +8,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\PipelineController;
+use App\Http\Controllers\QontakDealController;
 use App\Http\Controllers\QontakDealReportController;
 use App\Http\Controllers\ReportController;
 use Illuminate\Http\Request;
@@ -26,6 +27,8 @@ Route::prefix('auth')->group(function () {
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/dashboard', [DashboardController::class, 'index']);
 });
+
+
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/local/sales_invoices', [JurnalLocalApiController::class, 'getSalesInvoices']);
     Route::prefix('budgets')->group(function () {
@@ -42,6 +45,10 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('/', [AccountGroupingController::class, 'store']);
         Route::put('/{id}', [AccountGroupingController::class, 'update']);
         Route::delete('/{id}', [AccountGroupingController::class, 'destroy']);
+    });
+
+    Route::prefix('accounts')->group(function () {
+        Route::get('/', [AccountController::class, 'getallccoa']);
     });
 });
 Route::middleware('auth:sanctum')->get('/test-export', function () {
@@ -70,4 +77,4 @@ Route::post('/companies', [CompanyController::class, 'store']);
 
 Route::get('/pipelines', [PipelineController::class, 'getpipelines']);
 
-Route::get('/mekari-test', [\App\Http\Controllers\ReportController::class, 'testMekariApi']);
+Route::get('/qontak-deal', [QontakDealController::class, 'getDeals']);

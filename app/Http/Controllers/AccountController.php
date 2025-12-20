@@ -76,7 +76,31 @@ class AccountController extends Controller
             return $this->errorResponse('Gagal mengambil data budget: ' . $e->getMessage(), 500);
         }
     }
-
+    public function getallccoa(Request $request)
+    {
+        $query = JurnalAccount::query();
+        if ($request->filled('search')) {
+            $search = $request->search;
+            $searchFields = $request->has('search_fields')
+                ? explode(',', $request->search_fields)
+                : ['name', 'category'];
+            $query->where(function ($q) use ($searchFields, $search) {
+                foreach ($searchFields as $field) {
+                    $q->orWhere($field, 'LIKE', "%{$search}%");
+                }
+            });
+        }
+        $sortBy = $request->input('sortBy', 'created_at');
+        $sortType = $request->input('sortType', 'desc');
+        if (in_array($sortBy, ['id', 'name', 'category', 'balance_amount'])) {
+            $query->orderBy($sortBy, $sortType);
+        } else {
+            $query->orderBy('created_at', 'desc');
+        }
+        $perPage = $request->input('rowsPerPage', 10);
+        $data = $query->paginate($perPage);
+        return $this->successResponse($data);
+    }
     public function save(Request $request): JsonResponse
     {
         $monthKeys = [

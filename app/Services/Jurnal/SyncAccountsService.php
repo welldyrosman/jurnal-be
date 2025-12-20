@@ -3,6 +3,7 @@
 namespace App\Services\Jurnal;
 
 use App\Models\JurnalAccount;
+use App\Models\JurnalAccountCat;
 use Illuminate\Support\Facades\Log;
 use Throwable;
 
@@ -22,10 +23,10 @@ class SyncAccountsService extends JurnalBaseService // <-- [FIX] Meng-extend Bas
     {
         Log::info('🚀 Memulai sinkronisasi Chart of Accounts (COA)...');
         $totalSynced = 0;
-        
+
         try {
             // [FIX] Ambil respons penuh, lalu ekstrak key 'accounts'
-            $response = $this->get('accounts'); 
+            $response = $this->get('accounts');
             $accounts = $response['accounts'] ?? []; // <-- PERBAIKAN DI SINI
 
             if (empty($accounts)) {
@@ -42,7 +43,6 @@ class SyncAccountsService extends JurnalBaseService // <-- [FIX] Meng-extend Bas
 
             Log::info("✅ Sinkronisasi COA selesai. Total akun (root level) diproses: {$totalSynced}");
             return $totalSynced;
-
         } catch (Throwable $e) {
             Log::error('❌ Gagal total sinkronisasi COA: ' . $e->getMessage(), [
                 'trace' => $e->getTraceAsString(),
@@ -55,6 +55,14 @@ class SyncAccountsService extends JurnalBaseService // <-- [FIX] Meng-extend Bas
      * Menyimpan akun dan memproses 'children'-nya secara rekursif.
      * (Logika ini diasumsikan masih sama, berdasarkan respons JSON Anda sebelumnya)
      */
+    private function syncAccountCat($cat_id, $cat_name)
+    {
+        JurnalAccountCat::updateOrCreate([
+            "jurnal_cat_id" => $cat_id
+        ], [
+            "name" => $cat_name
+        ]);
+    }
     private function syncAccountAndChildren(array $accountData, ?int $parentId = null): void
     {
         // 1. Simpan/Perbarui akun saat ini
@@ -72,7 +80,7 @@ class SyncAccountsService extends JurnalBaseService // <-- [FIX] Meng-extend Bas
                 'synced_at' => now(),
             ]
         );
-
+        $this->syncAccountCat($accountData['category_id'], $accountData['category']);
         // 2. Proses 'children' jika ada
         // JSON Anda menunjukkan 'children' bisa 'null', jadi !empty() sudah aman
         if (!empty($accountData['children'])) {
