@@ -32,11 +32,11 @@ return new class extends Migration
 
             $table->timestamps();
 
-            // Foreign key
-            $table->foreign('jurnal_receive_payment_id')
-                ->references('id')
-                ->on('jurnal_receive_payments')
-                ->onDelete('cascade');
+            // ✅ UNIQUE (SATU KALI, NAMA PENDEK)
+            $table->unique(
+                ['jurnal_receive_payment_id', 'jurnal_record_id'],
+                'uniq_jrpr_payment_record'
+            );
 
             // Indexes
             $table->index('jurnal_record_id');

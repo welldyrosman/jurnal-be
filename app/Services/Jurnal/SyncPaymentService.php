@@ -15,14 +15,14 @@ class SyncPaymentService
 
     public function __construct()
     {
-        $this->baseUrl = config('services.jurnal.base_url', 'https://api.jurnal.id/partner/core/api/v1/');
+        $this->baseUrl = config('services.jurnal.base_url', 'https://api.jurnal.id/partner/core/api/v1');
         $this->accessToken = config('services.jurnal.api_key');
     }
 
     /**
      * Sinkronisasi semua halaman receive payments dari Jurnal API
      */
-    public function syncAllJurnalReceivePayments(): array
+    public function syncAllReceivePayments(): array
     {
         $results = [
             'success' => 0,
@@ -36,7 +36,7 @@ class SyncPaymentService
             $totalPages = 1;
 
             while ($page <= $totalPages) {
-                $response = $this->fetchJurnalReceivePayments($page);
+                $response = $this->fetchReceivePayments($page);
 
                 if (! $response['success']) {
                     $results['errors'][] = "Gagal mengambil data halaman {$page}:  {$response['error']}";
@@ -49,7 +49,7 @@ class SyncPaymentService
 
                 foreach ($data['receive_payments'] ??  [] as $payment) {
                     try {
-                        $this->saveJurnalReceivePayment($payment);
+                        $this->saveReceivePayment($payment);
                         $results['success']++;
                     } catch (\Exception $e) {
                         $results['failed']++;
@@ -62,6 +62,7 @@ class SyncPaymentService
             }
         } catch (\Exception $e) {
             $results['errors'][] = "Error umum: {$e->getMessage()}";
+            // \Log::error("Jurnal Sync General Error: {$e->getMessage()}");
         }
 
         return $results;
@@ -70,7 +71,7 @@ class SyncPaymentService
     /**
      * Fetch receive payments dari Jurnal API
      */
-    private function fetchJurnalReceivePayments(int $page = 1): array
+    private function fetchReceivePayments(int $page = 1): array
     {
         try {
             $response = Http::get("{$this->baseUrl}/receive_payments", [
@@ -98,12 +99,12 @@ class SyncPaymentService
     }
 
     /**
-     * Simpan atau update receive payment
+     * Simpan atau update receive payment dengan UPSERT untuk records
      */
-    private function saveJurnalReceivePayment(array $payment): void
+    private function saveReceivePayment(array $payment): void
     {
         DB::transaction(function () use ($payment) {
-            $JurnalReceivePayment = JurnalReceivePayment::updateOrCreate(
+            $receivePayment = JurnalReceivePayment::updateOrCreate(
                 ['jurnal_id' => $payment['id']],
                 [
                     'transaction_no' => $payment['transaction_no'],
@@ -114,11 +115,11 @@ class SyncPaymentService
                     'status' => $payment['status'],
                     'transaction_status_id' => $payment['transaction_status']['id'] ?? null,
                     'transaction_status_name' => $payment['transaction_status']['name_bahasa'] ?? $payment['transaction_status']['name'] ?? null,
-                    'deleted_at' => $payment['deleted_at'] ?? null,
+                    'deleted_at' => $payment['deleted_at'] ??  null,
                     'deletable' => $payment['deletable'] ?? false,
-                    'editable' => $payment['editable'] ??  false,
+                    'editable' => $payment['editable'] ?? false,
                     'audited_by' => $payment['audited_by'] ?? null,
-                    'transaction_date' => $payment['transaction_date'] ?  $this->parseDate($payment['transaction_date']) : null,
+                    'transaction_date' => $payment['transaction_date'] ? $this->parseDate($payment['transaction_date']) : null,
                     'due_date' => $payment['due_date'] ? $this->parseDate($payment['due_date']) : null,
                     'person_id' => $payment['person']['id'] ?? null,
                     'person_name' => $payment['person']['name'] ?? null,
@@ -126,17 +127,17 @@ class SyncPaymentService
                     'person_address' => $payment['person']['address'] ?? null,
                     'person_phone' => $payment['person']['phone'] ?? null,
                     'person_fax' => $payment['person']['fax'] ?? null,
-                    'transaction_type_id' => $payment['transaction_type']['id'] ?? null,
+                    'transaction_type_id' => $payment['transaction_type']['id'] ??  null,
                     'transaction_type_name' => $payment['transaction_type']['name'] ?? null,
-                    'payment_method_id' => $payment['payment_method']['id'] ?? null,
-                    'payment_method_name' => $payment['payment_method']['name'] ??  null,
+                    'payment_method_id' => $payment['payment_method']['id'] ??  null,
+                    'payment_method_name' => $payment['payment_method']['name'] ?? null,
                     'deposit_to_id' => $payment['deposit_to']['id'] ?? null,
                     'deposit_to_name' => $payment['deposit_to']['name'] ?? null,
                     'deposit_to_number' => $payment['deposit_to']['number'] ?? null,
                     'deposit_to_category' => $payment['deposit_to']['category']['name'] ?? null,
                     'is_draft' => $payment['is_draft'] ?? false,
                     'withholding_account_name' => $payment['witholding']['witholding_account_name'] ?? null,
-                    'withholding_account_number' => $payment['witholding']['witholding_account_number'] ??  null,
+                    'withholding_account_number' => $payment['witholding']['witholding_account_number'] ?? null,
                     'withholding_account_id' => $payment['witholding']['account_id'] ?? null,
                     'withholding_value' => (float)($payment['witholding']['value'] ?? 0),
                     'withholding_type' => $payment['witholding']['type'] ?? 'value',
@@ -144,7 +145,7 @@ class SyncPaymentService
                     'withholding_category_id' => $payment['witholding']['category']['id'] ?? null,
                     'original_amount' => (float)($payment['original_amount'] ?? 0),
                     'total' => (float)($payment['total'] ?? 0),
-                    'currency_code' => $payment['currency_code'] ??  'IDR',
+                    'currency_code' => $payment['currency_code'] ?? 'IDR',
                     'currency_list_id' => $payment['currency_list_id'] ?? null,
                     'currency_from_id' => $payment['currency_from_id'] ?? null,
                     'currency_to_id' => $payment['currency_to_id'] ?? null,
@@ -161,18 +162,13 @@ class SyncPaymentService
                 ]
             );
 
-            // Simpan records
-            if (! empty($payment['records'])) {
-                // Hapus records lama yang sudah tidak ada
-                JurnalReceivePaymentRecord::whereIn(
-                    'jurnal_record_id',
-                    collect($payment['records'])->pluck('id')->all()
-                )->delete();
-
+            // Simpan records dengan UPSERT (insert or update)
+            if (!empty($payment['records'])) {
                 foreach ($payment['records'] as $record) {
+                    // ✅ GUNAKAN updateOrCreate UNTUK UPSERT
                     JurnalReceivePaymentRecord::updateOrCreate(
                         [
-                            'jurnal_receive_payment_id' => $JurnalReceivePayment->id,
+                            'jurnal_receive_payment_id' => $receivePayment->id,
                             'jurnal_record_id' => $record['id'],
                         ],
                         [
@@ -181,10 +177,10 @@ class SyncPaymentService
                             'description' => $record['description'] ?? null,
                             'transaction_type_id' => $record['transaction_type_id'] ?? null,
                             'transaction_type' => $record['transaction_type'] ?? null,
-                            'transaction_no' => $record['transaction_no'] ?? null,
-                            'transaction_due_date' => $record['transaction_due_date'] ?  $this->parseDate($record['transaction_due_date']) : null,
+                            'transaction_no' => $record['transaction_no'] ??  null,
+                            'transaction_due_date' => $record['transaction_due_date'] ? $this->parseDate($record['transaction_due_date']) : null,
                             'transaction_total' => (float)($record['transaction_total'] ?? 0),
-                            'transaction_balance_due' => (float)($record['transaction_balance_due'] ??  0),
+                            'transaction_balance_due' => (float)($record['transaction_balance_due'] ?? 0),
                         ]
                     );
                 }

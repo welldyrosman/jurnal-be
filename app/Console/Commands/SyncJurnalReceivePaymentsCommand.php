@@ -23,7 +23,7 @@ class SyncJurnalReceivePaymentsCommand extends Command
         if ($this->option('failed')) {
             $results = $this->SyncPaymentService->syncFailedPayments();
         } else {
-            $results = $this->SyncPaymentService->syncAllJurnalReceivePayments();
+            $results = $this->SyncPaymentService->syncAllReceivePayments();
         }
 
         $this->info("\n✅ Sinkronisasi selesai!");
