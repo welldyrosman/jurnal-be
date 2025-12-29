@@ -47,4 +47,13 @@ class QontakDeal extends Model
     {
         return $this->hasMany(QontakDealProductAssociation::class);
     }
+    public function scopeWon($query)
+    {
+        return $query->where('crm_stage_name', 'Won');
+    }
+
+    public function scopeClosedBetween($query, $from, $to)
+    {
+        return $query->whereBetween('closed_date', [$from, $to]);
+    }
 }

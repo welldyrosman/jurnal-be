@@ -41,7 +41,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('/import', [AccountController::class, 'importPreview']);
         Route::post('/import-save', [AccountController::class, 'importSave']);
     });
-    Route::prefix('budgets/grouping')->group(function () {
+    Route::prefix('account/grouping')->group(function () {
         Route::post('/', [AccountGroupingController::class, 'store']);
         Route::put('/{id}', [AccountGroupingController::class, 'update']);
         Route::delete('/{id}', [AccountGroupingController::class, 'destroy']);
@@ -78,3 +78,5 @@ Route::post('/companies', [CompanyController::class, 'store']);
 Route::get('/pipelines', [PipelineController::class, 'getpipelines']);
 
 Route::get('/qontak-deal', [QontakDealController::class, 'getDeals']);
+
+Route::get('/labarugi', [ReportController::class, 'labaRugiReport']);

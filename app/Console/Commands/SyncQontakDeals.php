@@ -59,11 +59,11 @@ class SyncQontakDeals extends Command
                 fn($items) => $dealRepo->upsertMany($items)
             );
 
-            $this->info('🚀 Syncing Product Association...');
-            $this->syncEntity(
-                fn($page) => $service->getProductAssociation($page),
-                fn($items) => $qontakDealProductAssociationRepo->upsertMany($items)
-            );
+            // $this->info('🚀 Syncing Product Association...');
+            // $this->syncEntity(
+            //     fn($page) => $service->getProductAssociation($page),
+            //     fn($items) => $qontakDealProductAssociationRepo->upsertMany($items)
+            // );
 
             $this->info('✅ All Qontak data synced successfully');
             return self::SUCCESS;

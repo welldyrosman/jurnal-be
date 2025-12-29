@@ -90,6 +90,7 @@ class AccountController extends Controller
                 }
             });
         }
+
         $sortBy = $request->input('sortBy', 'created_at');
         $sortType = $request->input('sortType', 'desc');
         if (in_array($sortBy, ['id', 'name', 'category', 'balance_amount'])) {

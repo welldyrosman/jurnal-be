@@ -47,9 +47,9 @@ class AccountGroupingController extends Controller
         // Check duplicate (exclude current ID)
         if (
             AccountGrouping::where('name', $request->name)
-                ->where('type', $request->type)
-                ->where('id', '!=', $id)
-                ->exists()
+            ->where('type', $request->type)
+            ->where('id', '!=', $id)
+            ->exists()
         ) {
             return response()->json([
                 'message' => 'Group name already exists for this type'
