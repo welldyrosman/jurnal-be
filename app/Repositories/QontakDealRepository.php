@@ -3,6 +3,7 @@
 namespace App\Repositories;
 
 use App\Models\QontakDeal;
+use Carbon\Carbon;
 use Illuminate\Support\Facades\DB;
 
 class QontakDealRepository
@@ -10,6 +11,17 @@ class QontakDealRepository
     /**
      * Bulk upsert deals
      */
+    private function normalizeDate(?string $value): ?string
+    {
+        if (empty($value)) {
+            return null;
+        }
+
+        return Carbon::parse($value)
+            ->setTimezone('Asia/Jakarta')
+            ->format('Y-m-d H:i:s');
+    }
+
     public function upsertMany(array $items): void
     {
         $now = now();
@@ -20,8 +32,8 @@ class QontakDealRepository
                 'name'                  => $deal['name'] ?? null,
                 'slug'                  => $deal['slug'] ?? null,
 
-                'created_at_qontak'     => $deal['created_at'] ?? null,
-                'updated_at_qontak'     => $deal['updated_at'] ?? null,
+                'created_at_qontak'     => $this->normalizeDate($deal['created_at'] ?? null),
+                'updated_at_qontak'     => $this->normalizeDate($deal['updated_at'] ?? null),
 
                 'currency'              => $deal['currency'] ?? null,
                 'amount'                => $deal['size'] ?? 0,
@@ -38,13 +50,16 @@ class QontakDealRepository
                 'crm_lost_reason_id'    => $deal['crm_lost_reason_id'] ?? null,
                 'crm_lost_reason_name'  => $deal['crm_lost_reason_name'] ?? null,
 
-                // FK ke tabel lokal (sudah disync sebelumnya)
+                // FK ke tabel lokal
                 'qontak_company_id'     => $this->mapCompanyId($deal['crm_company_id'] ?? null),
-                'qontak_source_id'      => $this->mapSourceId($deal['crm_source_id'] ?? null, $deal['crm_source_name']),
+                'qontak_source_id'      => $this->mapSourceId(
+                    $deal['crm_source_id'] ?? null,
+                    $deal['crm_source_name'] ?? null
+                ),
 
-                'start_date'            => $deal['start_date'] ?? null,
-                'closed_date'           => $deal['closed_date'] ?? null,
-                'expired_date'          => $deal['expired_date'] ?? null,
+                'start_date'            => $this->normalizeDate($deal['start_date'] ?? null),
+                'closed_date'           => $this->normalizeDate($deal['closed_date'] ?? null),
+                'expired_date'          => $this->normalizeDate($deal['expired_date'] ?? null),
 
                 'creator_id'            => $deal['creator_id'] ?? null,
                 'creator_name'          => $deal['creator_name'] ?? null,
@@ -58,6 +73,7 @@ class QontakDealRepository
                 'updated_at'            => $now,
             ];
         })->toArray();
+
 
         DB::table('qontak_deals')->upsert(
             $data,
