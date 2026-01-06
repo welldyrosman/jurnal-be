@@ -12,7 +12,7 @@ class AccountGroupingController extends Controller
         $request->validate([
             'name' => 'required',
             'type' => 'required|in:akun,budget',
-            'budget_type' => 'required_if:type,budget|in:debit,credit',
+            'budget_type' => 'nullable|required_if:type,budget|in:debit,credit',
         ]);
 
         // Prevent duplicate name per type
@@ -42,7 +42,7 @@ class AccountGroupingController extends Controller
         $request->validate([
             'name' => 'required',
             'type' => 'required|in:akun,budget',
-            'budget_type' => 'required_if:type,budget|in:debit,credit',
+            'budget_type' => 'nullable|required_if:type,budget|in:debit,credit',
         ]);
 
         $group = AccountGrouping::findOrFail($id);
