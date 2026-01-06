@@ -6,9 +6,10 @@ use Illuminate\Database\Eloquent\Model;
 
 class AccountGrouping extends Model
 {
-     protected $fillable = [
+    protected $fillable = [
         'name',
         'type',
+        'balance_side',
     ];
 
     /**

@@ -200,7 +200,7 @@ class AccountController extends Controller
         try {
             // [FIX] Ambil dari tabel 'groupings' berdasarkan 'type'
             $groupingAkunOptions = AccountGrouping::where('type', 'akun')->get(['id', 'name']);
-            $groupingBudgetOptions = AccountGrouping::where('type', 'budget')->get(['id', 'name']);
+            $groupingBudgetOptions = AccountGrouping::where('type', 'budget')->get(['id', 'name', 'balance_side']);
 
             $data = [
                 'grouping_akun' => $groupingAkunOptions,

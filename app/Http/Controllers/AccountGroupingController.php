@@ -12,6 +12,7 @@ class AccountGroupingController extends Controller
         $request->validate([
             'name' => 'required',
             'type' => 'required|in:akun,budget',
+            'budget_type' => 'required_if:type,budget|in:debit,credit',
         ]);
 
         // Prevent duplicate name per type
@@ -24,6 +25,7 @@ class AccountGroupingController extends Controller
         $data = AccountGrouping::create([
             'name' => $request->name,
             'type' => $request->type,
+            'balance_side' => $request->type === 'budget' ? $request->budget_type : null,
         ]);
 
         return response()->json([
@@ -40,6 +42,7 @@ class AccountGroupingController extends Controller
         $request->validate([
             'name' => 'required',
             'type' => 'required|in:akun,budget',
+            'budget_type' => 'required_if:type,budget|in:debit,credit',
         ]);
 
         $group = AccountGrouping::findOrFail($id);
@@ -59,6 +62,7 @@ class AccountGroupingController extends Controller
         $group->update([
             'name' => $request->name,
             'type' => $request->type,
+            'balance_side' => $request->type === 'budget' ? $request->budget_type : null,
         ]);
 
         return response()->json([
