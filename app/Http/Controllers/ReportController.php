@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\AccountBudget;
 use App\Models\AccountGrouping;
 use App\Models\JurnalAccount;
 use App\Models\QontakDeal;
@@ -185,6 +186,149 @@ class ReportController extends Controller
             'execution_time_seconds' => $executionTime,
         ], 'Laba Rugi Report fetched successfully');
     }
+    public function labaRugiBudgetVsActual(Request $request)
+    {
+        $startTime = microtime(true);
+
+        $validator = Validator::make($request->all(), [
+            'period_1' => 'required|yearmonth',
+        ]);
+
+        if ($validator->fails()) {
+            return $this->errorResponse($validator->errors()->first(), 422);
+        }
+
+        $p1 = Carbon::createFromFormat('Ym', $request->period_1);
+        $year  = $p1->year;
+        $month = $p1->month;
+
+        // Date ranges
+        $ytdStart = $p1->copy()->startOfYear()->toDateString();
+        $ytdEnd   = $p1->copy()->endOfMonth()->toDateString();
+        $cmStart  = $p1->copy()->startOfMonth()->toDateString();
+        $cmEnd    = $p1->copy()->endOfMonth()->toDateString();
+
+        $monthMap = [
+            1 => 'budget_jan',
+            2 => 'budget_feb',
+            3 => 'budget_mar',
+            4 => 'budget_apr',
+            5 => 'budget_mei',
+            6 => 'budget_jun',
+            7 => 'budget_jul',
+            8 => 'budget_ags',
+            9 => 'budget_sep',
+            10 => 'budget_okt',
+            11 => 'budget_nov',
+            12 => 'budget_des',
+        ];
+
+        $cacheKey = "budgetvsactual:{$year}:{$month}";
+        $reportData = cache()->remember($cacheKey, 30, function () use (
+            $ytdStart,
+            $ytdEnd,
+            $cmStart,
+            $cmEnd,
+            $year,
+            $month,
+            $monthMap
+        ) {
+
+            /** ================= ACTUAL ================= */
+            $actualYtd = $this->applyBalanceSideFilter(
+                $this->ledgerService->getSummary($ytdStart, $ytdEnd)['accounts']
+            );
+
+            $actualCm = $this->applyBalanceSideFilter(
+                $this->ledgerService->getSummary($cmStart, $cmEnd)['accounts']
+            );
+
+            /** ================= BUDGET ================= */
+            $accounts = JurnalAccount::with([
+                'grouping',
+                'accountBudgets' => function ($q) use ($year) {
+                    $q->where('year', $year);
+                }
+            ])
+                ->whereNotNull('budget_grouping_id')
+                ->get();
+
+            $budgetYtd = [];
+            $budgetCm  = [];
+            //dd($accounts);
+            foreach ($accounts as $account) {
+
+                $budget = $account->accountBudgets->first(); // bisa NULL
+
+                $ytdValue = 0;
+                for ($m = 1; $m <= $month; $m++) {
+                    $col = $monthMap[$m];
+                    //dd($col, $budget?->$col, $budget);
+                    $ytdValue += $budget?->$col ?? 0;
+                }
+                //  dd($ytdValue, "({$account->number}) {$account->name}");
+                $cmCol   = $monthMap[$month];
+                $cmValue = $budget?->$cmCol ?? 0;
+                //  dd("({$account->number}) {$account->name}");
+                $row = [
+
+                    'account_name' => "({$account->number}) {$account->name}",
+                    'balance_side' => $account->grouping?->balance_side,
+                    'debit'        => $ytdValue,
+                    'credit'       => 0,
+                    'transactions' => [],
+                ];
+
+                $budgetYtd[] = $row;
+
+                $row['debit'] = $cmValue;
+                $budgetCm[]   = $row;
+            }
+
+            return compact('actualYtd', 'budgetYtd', 'actualCm', 'budgetCm');
+        });
+
+        /** ================= MERGE ================= */
+        $byAccount = [];
+
+        $pushVal = function (array $src, string $field) use (&$byAccount) {
+            foreach ($src as $acc) {
+                $name = $acc['account_name'];
+                $byAccount[$name]['account_name'] = $name;
+                $byAccount[$name]['balance_side'] ??= $acc['balance_side'];
+                $byAccount[$name][$field] = $this->getSideValue($acc);
+            }
+        };
+        //  dd($reportData);
+        $pushVal($reportData['actualYtd'], 'y1');
+        $pushVal($reportData['budgetYtd'], 'y2');
+        $pushVal($reportData['actualCm'],  'cm1');
+        $pushVal($reportData['budgetCm'],  'cm2');
+
+        foreach ($byAccount as &$acc) {
+            $y1 = $acc['y1'] ?? null;
+            $y2 = $acc['y2'] ?? null;
+
+            $cm1 = $acc['cm1'] ?? null;
+            $cm2 = $acc['cm2'] ?? null;
+
+            $acc['penurunan_y'] =
+                is_null($y1) || empty($y2)
+                ? 0
+                : round($y1 / $y2, 4);
+
+            $acc['penurunan_cm'] =
+                is_null($cm1) || empty($cm2)
+                ? 0
+                : round($cm1 / $cm2, 4);
+        }
+
+        return $this->successResponse([
+            'accounts' => array_values($byAccount),
+            'execution_time_seconds' => round(microtime(true) - $startTime, 3),
+        ], 'Laba Rugi Budget vs Actual fetched successfully');
+    }
+
     public function testMekariApi(MekariApiService $mekari)
     {
         $method = 'GET';

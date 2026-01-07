@@ -80,3 +80,4 @@ Route::get('/pipelines', [PipelineController::class, 'getpipelines']);
 Route::get('/qontak-deal', [QontakDealController::class, 'getDeals']);
 
 Route::get('/labarugi', [ReportController::class, 'labaRugiReport']);
+Route::get('/labarugi-budget-vs-actual', [ReportController::class, 'labaRugiBudgetVsActual']);

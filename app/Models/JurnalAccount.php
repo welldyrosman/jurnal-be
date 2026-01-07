@@ -5,7 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
-use Illuminate\Database\Eloquent\Relations\HasMany;  
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class JurnalAccount extends Model
 {
@@ -44,5 +44,13 @@ class JurnalAccount extends Model
     public function budgetGrouping(): BelongsTo
     {
         return $this->belongsTo(AccountGrouping::class, 'budget_grouping_id');
+    }
+    public function grouping()
+    {
+        return $this->belongsTo(AccountGrouping::class, 'budget_grouping_id');
+    }
+    public function accountBudgets()
+    {
+        return $this->hasMany(AccountBudget::class, 'jurnal_account_id');
     }
 }
