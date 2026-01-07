@@ -315,12 +315,12 @@ class ReportController extends Controller
             $acc['penurunan_y'] =
                 is_null($y1) || empty($y2)
                 ? 0
-                : round($y1 / $y2, 4);
+                : round($y1 / $y2, 4) * 100;
 
             $acc['penurunan_cm'] =
                 is_null($cm1) || empty($cm2)
                 ? 0
-                : round($cm1 / $cm2, 4);
+                : round($cm1 / $cm2, 4) * 100;
         }
 
         return $this->successResponse([
