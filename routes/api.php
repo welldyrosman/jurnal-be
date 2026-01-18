@@ -26,6 +26,7 @@ Route::prefix('auth')->group(function () {
 });
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/dashboard', [DashboardController::class, 'index']);
+    Route::post('/dashboard-qontak', [DashboardController::class, 'indexQontak']);
 });
 
 

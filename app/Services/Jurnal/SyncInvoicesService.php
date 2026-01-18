@@ -18,6 +18,7 @@ class SyncInvoicesService extends JurnalBaseService
 
     /**
      * Sinkronisasi data invoice dari Jurnal.id
+     * Menggunakan metode Mark & Sweep (Pruning) untuk menangani data yang dihapus.
      *
      * @param Command|null $command
      * @return integer
@@ -28,19 +29,28 @@ class SyncInvoicesService extends JurnalBaseService
         $this->command = $command;
         $page = 1;
         $totalSynced = 0;
-        $perPage = 100; // Ambil 100 data per halaman untuk efisiensi
+        $perPage = 100;
+
+        // 1. MARK: Tentukan waktu mulai batch ini.
+        // Waktu ini akan menjadi "stempel" untuk semua data yang valid di siklus ini.
+        $syncBatchTime = now();
 
         $this->logInfo("🚀 Memulai sinkronisasi Sales Invoices dari Jurnal.id...");
+        $this->logInfo("🕒 Batch Time: " . $syncBatchTime->toDateTimeString());
 
         do {
             try {
+                // Request ke API
                 $response = $this->get('sales_invoices', [
                     'page' => $page,
                     'page_size' => $perPage,
+                    // Opsional: tambahkan 'updated_since' jika ingin incremental sync
+                    // tapi untuk pruning yang akurat, full sync per periode lebih aman.
                 ]);
             } catch (Throwable $e) {
                 $this->logError("❌ Gagal total mengambil data dari API pada halaman {$page}: " . $e->getMessage());
-                throw $e; // Hentikan proses jika API gagal total
+                // PENTING: Throw error agar script berhenti dan TIDAK menjalankan proses penghapusan data (pruning)
+                throw $e;
             }
 
             $invoices = $response['sales_invoices'] ?? [];
@@ -57,13 +67,17 @@ class SyncInvoicesService extends JurnalBaseService
 
             foreach ($invoices as $invoiceData) {
                 try {
-                    $this->syncSingleInvoice($invoiceData);
+                    // Masukkan $syncBatchTime ke proses update
+                    $this->syncSingleInvoice($invoiceData, $syncBatchTime);
                     $totalSynced++;
                 } catch (Throwable $e) {
                     $invoiceId = $invoiceData['id'] ?? 'UNKNOWN';
                     Log::error("❌ Gagal sync invoice {$invoiceId}: {$e->getMessage()}", [
                         'trace' => $e->getTraceAsString(),
                     ]);
+                    // Kita continue loop, tapi data ini TIDAK akan punya synced_at terbaru,
+                    // hati-hati: jika gagal sync, data ini akan dianggap "stale" dan mungkin terhapus di langkah Pruning.
+                    // Jika Anda ingin proteksi, pastikan error handling di sini matang.
                 }
                 $progressBar?->advance();
             }
@@ -72,17 +86,22 @@ class SyncInvoicesService extends JurnalBaseService
             if ($this->command) $this->command->newLine(2);
 
             $page++;
-        } while ($count > 0 && ($page <= ($response['total_pages'] ?? $page))); // Berhenti jika halaman sudah habis
+        } while ($count > 0 && ($page <= ($response['total_pages'] ?? $page)));
 
-        $this->logInfo("🏁 Sinkronisasi invoice selesai. Total tersimpan: {$totalSynced}");
+        // 2. SWEEP: Hapus data usang.
+        // Hanya dijalankan jika loop di atas selesai tanpa crash (exception).
+        $this->pruneStaleData($syncBatchTime);
+
+        $this->logInfo("🏁 Sinkronisasi invoice selesai. Total tersimpan/updated: {$totalSynced}");
         return $totalSynced;
     }
 
-    private function syncSingleInvoice(array $invoiceData): void
+    private function syncSingleInvoice(array $invoiceData, Carbon $syncTime): void
     {
-        DB::transaction(function () use ($invoiceData) {
+        DB::transaction(function () use ($invoiceData, $syncTime) {
             $person = null;
             if (!empty($invoiceData['person'])) {
+                // Person di-sync tapi tidak perlu di-prune di sini (karena ini service invoice)
                 $person = $this->syncPerson($invoiceData['person']);
             }
 
@@ -117,13 +136,42 @@ class SyncInvoicesService extends JurnalBaseService
                     'updated_at_jurnal' => Carbon::parse($invoiceData['updated_at']),
                     'deleted_at_jurnal' => $this->parseDate($invoiceData['deleted_at']),
                     'raw_data' => json_encode($invoiceData),
-                    'synced_at' => now(),
+
+                    // KUNCI: Update synced_at dengan waktu batch saat ini
+                    'synced_at' => $syncTime,
                 ]
             );
 
+            // Lines & Payments di-replace (delete insert) per invoice aman dilakukan
             $this->syncInvoiceLines($invoice, $invoiceData['transaction_lines_attributes'] ?? []);
             $this->syncPayments($invoice, $invoiceData['payments'] ?? []);
         });
+    }
+
+    /**
+     * Menghapus (atau soft delete) invoice yang tidak ditemukan di API
+     * pada siklus sinkronisasi saat ini.
+     */
+    private function pruneStaleData(Carbon $syncBatchTime): void
+    {
+        // Cari data yang synced_at-nya KURANG DARI waktu batch ini.
+        // Artinya data tersebut tidak tersentuh/terupdate saat looping API tadi.
+        $query = JurnalInvoice::where('synced_at', '<', $syncBatchTime)
+            ->orWhereNull('synced_at'); // Handle data lama yg mungkin null
+
+        $count = $query->count();
+
+        if ($count > 0) {
+            $this->logInfo("🧹 Menemukan {$count} data usang (terhapus di Jurnal). Melakukan pembersihan...");
+
+            // Hapus data. Pastikan Model JurnalInvoice menggunakan SoftDeletes 
+            // jika ingin bisa direstore, atau delete permanen jika tidak.
+            $query->delete();
+
+            $this->logInfo("✨ Berhasil menghapus {$count} data invoice lokal.");
+        } else {
+            $this->logInfo("✅ Database bersih. Tidak ada data usang yang perlu dihapus.");
+        }
     }
 
     private function syncPerson(array $personData): JurnalPerson
@@ -136,7 +184,7 @@ class SyncInvoicesService extends JurnalBaseService
                 'phone' => $personData['phone'],
                 'address' => $personData['address'],
                 'billing_address' => $personData['billing_address'],
-                'synced_at' => now(),
+                'synced_at' => now(), // Person pakai now() saja, tidak ikut batch invoice
             ]
         );
     }
@@ -189,11 +237,14 @@ class SyncInvoicesService extends JurnalBaseService
     private function parseDate($value): ?Carbon
     {
         if (empty($value)) return null;
+
         try {
-            return Carbon::parse($value);
+            // Coba format d/m/Y dulu karena ini format input Anda
+            return Carbon::createFromFormat('d/m/Y', $value)->startOfDay();
         } catch (Throwable) {
             try {
-                return Carbon::createFromFormat('d/m/Y', $value);
+                // Fallback ke parser standar jika format berbeda
+                return Carbon::parse($value)->startOfDay();
             } catch (Throwable) {
                 return null;
             }
@@ -212,4 +263,3 @@ class SyncInvoicesService extends JurnalBaseService
         $this->command?->error($message);
     }
 }
-

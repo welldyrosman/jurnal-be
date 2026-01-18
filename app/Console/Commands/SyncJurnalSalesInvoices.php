@@ -13,7 +13,7 @@ class SyncJurnalSalesInvoices extends Command
      * @var string
      */
     protected $signature = 'jurnal:sync-sales-invoices
-                            {--start-date=1/1/2020 :  Tanggal awal sinkronisasi}
+                            {--start-date=1/1/2016 :  Tanggal awal sinkronisasi}
                             {--single-id= :  Sinkronisasi invoice tertentu berdasarkan ID}';
 
     /**
