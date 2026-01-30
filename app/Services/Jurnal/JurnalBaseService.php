@@ -25,15 +25,15 @@ abstract class JurnalBaseService
             ->withHeaders([
                 'Accept' => 'application/json',
             ])
-            ->timeout(60) 
-            ->retry(3, 100); 
+            ->timeout(60)
+            ->retry(3, 100);
     }
     protected function get(string $endpoint, array $query = []): array
     {
         $queryWithToken = array_merge(['access_token' => $this->apiKey], $query);
+        //dd($queryWithToken);
         $response = $this->client->get($endpoint, $queryWithToken);
         $response->throw();
         return $response->json();
     }
 }
-

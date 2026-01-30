@@ -105,15 +105,47 @@ class DashboardController extends Controller
                 $startDateInThisYear   = Carbon::parse($endDateApi)->startOfYear()->format('Y-m-d');
                 $endDateInThisYear     = Carbon::parse($endDateApi)->endOfYear()->format('Y-m-d');
                 $year                  = Carbon::parse($endDateApi)->endOfYear()->format('Y');
-                $data                  = QontakDeal::select('crm_stage_name', DB::raw('COUNT(*) as total'))
-                    ->groupBy('crm_stage_name')
-                    ->orderBy('total', 'DESC')
+                // 1. Ambil semua data dalam satu query
+                $rawResult = QontakDeal::select('crm_pipeline_name', 'crm_stage_name', DB::raw('COUNT(*) as total'))
+                    ->whereIn('crm_pipeline_name', ['Public Training', 'Konsultasi', 'In-House Training'])
+                    ->orWhereNull('crm_pipeline_name') // Jika ada yang null tapi ingin dihitung di total
+                    ->groupBy('crm_pipeline_name', 'crm_stage_name')
                     ->get();
-                return [
 
+                // 2. Gunakan Collection untuk memfilter data tanpa query ulang
+                $dataPublic     = $rawResult->where('crm_pipeline_name', 'Public Training')->values();
+                $dataKonsultasi = $rawResult->where('crm_pipeline_name', 'Konsultasi')->values();
+                $dataInhouse    = $rawResult->where('crm_pipeline_name', 'In-House Training')->values();
+
+                // 3. Untuk $data (Total Gabungan), kita grouping ulang di level PHP
+                $data = $rawResult->groupBy('crm_stage_name')
+                    ->map(function ($items, $stage) {
+                        return [
+                            'crm_stage_name' => $stage,
+                            'total' => $items->sum('total')
+                        ];
+                    })
+                    ->sortByDesc('total')
+                    ->values();
+                $totalWon = QontakDeal::where('crm_stage_name', 'Won')->count();
+                $totalLost = QontakDeal::where('crm_stage_name', 'Lost')->count();
+                $totalClosed = $totalWon + $totalLost;
+                $winRate = $totalClosed > 0 ? ($totalWon / $totalClosed) * 100 : 0;
+                $openPipelineValue = QontakDeal::whereNotIn('crm_stage_name', ['Won', 'Lost'])
+                    ->sum('amount');
+
+                $avgDealValue = $totalWon > 0 ? QontakDeal::where('crm_stage_name', 'Won')->avg('amount') : 0;
+                return [
                     'year'           => $endDateApi,
                     'deal_by_stage'  => $data,
+                    'deal_by_stage_public'  => $dataPublic,
+                    'deal_by_stage_konsultasi'  => $dataKonsultasi,
+                    'deal_by_stage_inhouse'  => $dataInhouse,
                     'sumpipeline'    => QontakDeal::where('crm_stage_name', 'Won')->sum('amount'),
+                    'total_won'         => $totalWon,
+                    'win_rate'          => round($winRate, 2),
+                    'avg_deal_value'    => $avgDealValue,
+                    'open_pipeline_value' => $openPipelineValue,
                     'dealwonchart'   => $dealwonchart
                 ];
             });
@@ -230,13 +262,14 @@ class DashboardController extends Controller
                 $reportData            = $this->balanceSheetService->getReport(['end_date' => $endDateApi]);
                 $startDateInThisYear   = Carbon::parse($endDateApi)->startOfYear()->format('Y-m-d');
                 $endDateInThisYear     = Carbon::parse($endDateApi)->endOfYear()->format('Y-m-d');
-                $year                  = Carbon::parse($endDateApi)->endOfYear()->format('Y');
                 $ledgerInYear          = $this->ledgerService->getSummary($startDateInThisYear, $endDateInThisYear);
+                $year                  = Carbon::parse($endDateApi)->endOfYear()->format('Y');
+                $ledgerInDate          = $this->ledgerService->getSummary($startDateApi, $endDateApi);
                 $chartData             = $this->ledgerService->calculateMonthlySales($ledgerInYear, $year);
                 $lineChartInOUt        = $this->ledgerService->lineInOutData($ledgerInYear, $year);
 
                 // === Tambahan 3 properti baru (logika sama dengan FE) ===
-                $jasaincome = collect($ledgerInYear['accounts'] ?? [])
+                $jasaincome = collect($ledgerInDate['accounts'] ?? [])
                     ->firstWhere('account_name', '(4100.0001) Pendapatan Jasa') ?? (object)[];
 
                 $currentAssets = $reportData['current_assets']['accounts']['array'] ?? [];
@@ -257,6 +290,24 @@ class DashboardController extends Controller
                     ->sum('amount');
                 $dibayar30Count = ViewPaymentHistory::where('payment_date', '>=', Carbon::now()->subDays(30))
                     ->count();
+                $statusBreakdown = JurnalSalesInvoice::query()
+                    ->select(
+                        'transaction_status_name as name',
+                        DB::raw('COUNT(*) as value')
+                    )
+                    ->groupBy('transaction_status_name')
+                    ->orderByDesc('value')
+                    ->get();
+
+                $statusBreakdownByDate = JurnalSalesInvoice::query()
+                    ->select(
+                        'transaction_status_name as name',
+                        DB::raw('COUNT(*) as value')
+                    )
+                    ->whereBetween('transaction_date', [$startDateApi, $endDateApi])
+                    ->groupBy('transaction_status_name')
+                    ->orderByDesc('value')
+                    ->get();
 
                 return [
                     // 'ledger_summary' => $ledgerInYear,
@@ -269,6 +320,10 @@ class DashboardController extends Controller
                     'balance_piutang' => $balancePiutang1142,
                     'aging_piutang'   => $this->getAgingPiutang($startDateApi, $endDateApi),
                     'top_piutang_customer' => $this->topPiutangCustomer()->getData(),
+                    'pie_status_breakdown' => [
+                        'all' => $statusBreakdown,
+                        'by_date' => $statusBreakdownByDate
+                    ],
                     'piutang' => [
                         "total_piutang" => [
                             "amount" => $totalPiutang,
