@@ -128,10 +128,10 @@ class DashboardController extends Controller
                     ->sortByDesc('total')
                     ->values();
                 $totalWon = QontakDeal::where('crm_stage_name', 'Won')->count();
-                $totalLost = QontakDeal::where('crm_stage_name', 'Lost')->count();
+                $totalLost = QontakDeal::where('crm_stage_name', 'Cancelled')->count();
                 $totalClosed = $totalWon + $totalLost;
                 $winRate = $totalClosed > 0 ? ($totalWon / $totalClosed) * 100 : 0;
-                $openPipelineValue = QontakDeal::whereNotIn('crm_stage_name', ['Won', 'Lost'])
+                $openPipelineValue = QontakDeal::whereNotIn('crm_stage_name', ['Won', 'Cancelled'])
                     ->sum('amount');
 
                 $avgDealValue = $totalWon > 0 ? QontakDeal::where('crm_stage_name', 'Won')->avg('amount') : 0;
