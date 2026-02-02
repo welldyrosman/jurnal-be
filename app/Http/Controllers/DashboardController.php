@@ -187,7 +187,7 @@ class DashboardController extends Controller
         return response()->json($data);
     }
 
-    private function getAgingPiutang($startDateApi, $endDateApi)
+    private function getAgingPiutangBU($startDateApi, $endDateApi)
     {
         $paymentSub = DB::query()
             ->select([
@@ -238,6 +238,56 @@ class DashboardController extends Controller
         ", array_fill(0, 5, $endDateApi))
             ->first();
     }
+    private function getAgingPiutang($endDateApi)
+    {
+        $paymentSub = DB::query()
+            ->select([
+                'jrpr.transaction_no as invoice_no',
+                'jrpr.amount',
+            ])
+            ->from('jurnal_receive_payment_records as jrpr')
+            ->join('jurnal_receive_payments as jrp', 'jrpr.jurnal_receive_payment_id', '=', 'jrp.id')
+            ->where('jrp.transaction_date', '<=', $endDateApi)
+
+            ->unionAll(
+                DB::query()
+                    ->select([
+                        'ji.transaction_no as invoice_no',
+                        'jcm.original_amount as amount',
+                    ])
+                    ->from('jurnal_payments as jp')
+                    ->join('jurnal_credit_memos as jcm', 'jp.transaction_no', '=', 'jcm.transaction_no')
+                    ->leftJoin('jurnal_invoices as ji', 'jp.invoice_id', '=', 'ji.id')
+                    ->where('jp.transaction_date', '<=', $endDateApi)
+            );
+
+        $sumPaymentSub = DB::query()
+            ->fromSub($paymentSub, 'payment')
+            ->select([
+                'invoice_no',
+                DB::raw('SUM(amount) as total_bayar'),
+            ])
+            ->groupBy('invoice_no');
+
+        return DB::table('jurnal_invoices as ji')
+            ->join('jurnal_sales_invoices as jsi', 'ji.transaction_no', '=', 'jsi.transaction_no')
+            ->leftJoinSub(
+                $sumPaymentSub,
+                's',
+                fn($join) => $join->on('ji.transaction_no', '=', 's.invoice_no')
+            )
+            ->where('ji.transaction_status_name', '!=', 'Lunas')
+            ->selectRaw("
+            COALESCE(SUM(CASE WHEN DATEDIFF(?, ji.transaction_date) <= 30 THEN (jsi.original_amount - IFNULL(s.total_bayar,0)) ELSE 0 END)) AS aging_lt_30,
+            COALESCE(SUM(CASE WHEN DATEDIFF(?, ji.transaction_date) BETWEEN 31 AND 60 THEN (jsi.original_amount - IFNULL(s.total_bayar,0)) ELSE 0 END)) AS aging_31_60,
+            COALESCE(SUM(CASE WHEN DATEDIFF(?, ji.transaction_date) BETWEEN 61 AND 90 THEN (jsi.original_amount - IFNULL(s.total_bayar,0)) ELSE 0 END)) AS aging_61_90,
+            COALESCE(SUM(CASE WHEN DATEDIFF(?, ji.transaction_date) BETWEEN 91 AND 120 THEN (jsi.original_amount - IFNULL(s.total_bayar,0)) ELSE 0 END)) AS aging_91_120,
+            COALESCE(SUM(CASE WHEN DATEDIFF(?, ji.transaction_date) > 120 THEN (jsi.original_amount - IFNULL(s.total_bayar,0)) ELSE 0 END)) AS aging_gt_120,
+            COALESCE(SUM(jsi.original_amount - IFNULL(s.total_bayar,0))) AS total_piutang
+        ", array_fill(0, 5, $endDateApi))
+            ->first();
+    }
+
 
     public function index(Request $request): JsonResponse
     {
@@ -318,7 +368,7 @@ class DashboardController extends Controller
                     'jasaincome'      => $jasaincome,
                     'balance_asset'   => $balanceAsset,
                     'balance_piutang' => $balancePiutang1142,
-                    'aging_piutang'   => $this->getAgingPiutang($startDateApi, $endDateApi),
+                    'aging_piutang'   => $this->getAgingPiutang($endDateApi),
                     'top_piutang_customer' => $this->topPiutangCustomer()->getData(),
                     'pie_status_breakdown' => [
                         'all' => $statusBreakdown,
