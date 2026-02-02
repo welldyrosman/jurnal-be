@@ -3,6 +3,9 @@
 namespace App\Services\Jurnal;
 
 use App\Models\AccountBudget;
+use App\Models\BudgetReport;
+use App\Models\BudgetReportAmount;
+use App\Models\BudgetReportLine;
 use Carbon\Carbon;
 use Throwable;
 
@@ -85,7 +88,7 @@ class GeneralLedgerService extends JurnalBaseService
         ];
     }
 
-    public function calculateMonthlySales(array $ledgerData, $year): array
+    public function calculateMonthlySalesBU(array $ledgerData, $year): array
     {
         $monthlySales = array_fill(0, 12, 0.0);
 
@@ -157,6 +160,99 @@ class GeneralLedgerService extends JurnalBaseService
             'summary' => [
                 "sales" => $totalAcccountSales,
                 "budget" => array_sum($randomData)
+            ]
+        ];
+    }
+    public function calculateMonthlySales(array $ledgerData, $year): array
+    {
+        // =========================
+        // SALES (LEDGER)
+        // =========================
+        $monthlySales = array_fill(0, 12, 0.0);
+
+        $accounts = $ledgerData['accounts'] ?? [];
+        $salesAccount = collect($accounts)
+            ->firstWhere('account_name', '(4100.0001) Pendapatan Jasa');
+
+        $totalAcccountSales = 0;
+
+        if ($salesAccount) {
+            $totalAcccountSales = (float) ($salesAccount['credit'] ?? 0);
+
+            foreach ($salesAccount['transactions'] ?? [] as $item) {
+                $transaction = $item['transaction'] ?? null;
+                if (!$transaction) continue;
+
+                try {
+                    $monthIndex = Carbon::createFromFormat('d/m/Y', $transaction['date'])
+                        ->month - 1;
+
+                    if ($monthIndex >= 0 && $monthIndex < 12) {
+                        $monthlySales[$monthIndex] += (float) $transaction['credit_raw'];
+                    }
+                } catch (\Throwable $e) {
+                    logger()->warning('Gagal parse tanggal transaksi ledger', [
+                        'date' => $transaction['date'] ?? null
+                    ]);
+                }
+            }
+        }
+
+        // =========================
+        // BUDGET (REVENUE ONLY)
+        // =========================
+        $budget = array_fill(0, 12, 0.0);
+
+        $budgetReport = BudgetReport::where('budget_year', $year)->first();
+
+        if ($budgetReport) {
+            $revenueLineIds = BudgetReportLine::where('budget_report_id', $budgetReport->id)
+                ->where('name', 'Revenue')
+                ->pluck('id');
+
+            if ($revenueLineIds->isNotEmpty()) {
+                $amounts = BudgetReportAmount::whereIn('amountable_id', function ($q) use ($revenueLineIds) {
+                    $q->select('id')
+                        ->from('budget_report_line_childrens')
+                        ->whereIn('budget_report_line_id', $revenueLineIds);
+                })
+                    ->where('amountable_type', 'App\Models\BudgetReportLineChildren')
+                    ->selectRaw('period_index, SUM(amount) as total')
+                    ->groupBy('period_index')
+                    ->get();
+
+                foreach ($amounts as $row) {
+                    if ($row->period_index >= 0 && $row->period_index < 12) {
+                        $budget[$row->period_index] = (float) $row->total;
+                    }
+                }
+            }
+        }
+
+        // =========================
+        // RESPONSE
+        // =========================
+        $labels = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Ags', 'Sep', 'Okt', 'Nov', 'Des'];
+
+        return [
+            'labels' => $labels,
+            'series' => [
+                [
+                    'name' => 'Sales',
+                    'type' => 'bar',
+                    'data' => $monthlySales,
+                    'itemStyle' => ['color' => new \stdClass()],
+                ],
+                [
+                    'name' => 'Target',
+                    'type' => 'bar',
+                    'data' => $budget,
+                    'itemStyle' => ['color' => new \stdClass()],
+                ]
+            ],
+            'summary' => [
+                'sales' => $totalAcccountSales,
+                'budget' => array_sum($budget),
             ]
         ];
     }
