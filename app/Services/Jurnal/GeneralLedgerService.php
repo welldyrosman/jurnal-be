@@ -237,16 +237,17 @@ class GeneralLedgerService extends JurnalBaseService
         return [
             'labels' => $labels,
             'series' => [
-                [
-                    'name' => 'Sales',
-                    'type' => 'bar',
-                    'data' => $monthlySales,
-                    'itemStyle' => ['color' => new \stdClass()],
-                ],
+
                 [
                     'name' => 'Target',
                     'type' => 'bar',
                     'data' => $budget,
+                    'itemStyle' => ['color' => new \stdClass()],
+                ],
+                [
+                    'name' => 'Sales',
+                    'type' => 'bar',
+                    'data' => $monthlySales,
                     'itemStyle' => ['color' => new \stdClass()],
                 ]
             ],

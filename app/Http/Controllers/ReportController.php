@@ -8,6 +8,7 @@ use App\Models\JurnalAccount;
 use App\Models\QontakDeal;
 use App\Models\QontakDealProduct;
 use App\Services\Jurnal\GeneralLedgerService;
+use App\Services\Jurnal\JurnalProfitLossBudgetService;
 use App\Services\Jurnal\LabaRugiService;
 use App\Services\MekariApiService;
 use Carbon\Carbon;
@@ -337,5 +338,97 @@ class ReportController extends Controller
         $response = $mekari->request($method, $path, $query);
         return $response;
         // return response()->json($response);
+    }
+    public function newLabaRugiBudgetVsActual(Request $request)
+    {
+        $service = new JurnalProfitLossBudgetService();
+        $p1 = Carbon::createFromFormat('Ym', $request->period_1);
+
+        $ytdEnd = $p1->copy()->endOfYear()->format('d-m-Y');
+        $cmEnd  = $p1->copy()->endOfMonth()->format('d-m-Y');
+
+        $reportMonth = $service->fetch($cmEnd);
+        $reportYear  = $service->fetch($ytdEnd);
+
+        // Ambil array data utama
+        $dataMonth = $reportMonth['profit_loss_budgeting_report']['data'] ?? [];
+        $dataYear  = $reportYear['profit_loss_budgeting_report']['data'] ?? [];
+
+        $mergedData = $this->mergeReportData($dataMonth, $dataYear);
+
+        return $this->successResponse([
+            'report_info' => [
+                'company_name' => $reportMonth['profit_loss_budgeting_report']['company_name'],
+                'month_range'  => $reportMonth['profit_loss_budgeting_report']['report_range'],
+                'year_range'   => $reportYear['profit_loss_budgeting_report']['report_range'],
+            ],
+            'data' => $mergedData
+        ], 'Laba Rugi Budget vs Actual merged successfully');
+    }
+
+    /**
+     * Fungsi untuk menggabungkan data Month (pm) dan Year (py)
+     */
+    private function mergeReportData($monthData, $yearData)
+    {
+        $merged = [];
+
+        foreach ($monthData as $index => $mRow) {
+            $yRow = $yearData[$index] ?? null;
+
+            // Base structure untuk baris ini
+            $row = [
+                'name'      => $mRow['name'],
+                'line_type' => $mRow['line_type'],
+                // Data Gabungan di level Kategori/Summary
+                'month_total' => $mRow['total'] ?? null,
+                'year_total'  => $yRow['total'] ?? null,
+                'children'    => []
+            ];
+
+            // Jika memiliki children (Sub-label dan Accounts)
+            if (isset($mRow['children'])) {
+                foreach ($mRow['children'] as $cIndex => $mChild) {
+                    $yChild = $yRow['children'][$cIndex] ?? null;
+
+                    $childData = [
+                        'label_name'  => $mChild['label_name'],
+                        'month_total' => $mChild['total'] ?? null,
+                        'year_total'  => $yChild['total'] ?? null,
+                        'accounts'    => []
+                    ];
+
+                    // Join di level Akun berdasarkan ID
+                    if (isset($mChild['account'])) {
+                        $yAccounts = collect($yChild['account'] ?? [])->keyBy('id');
+
+                        foreach ($mChild['account'] as $mAcc) {
+                            $yAcc = $yAccounts->get($mAcc['id']);
+
+                            $childData['accounts'][] = [
+                                'id'             => $mAcc['id'],
+                                'number'         => $mAcc['number'],
+                                'name'           => $mAcc['name'],
+                                // Kolom Bulan Ini (Current Month)
+                                'pm_actual'      => $mAcc['actual'][0] ?? 0,
+                                'pm_budget'      => $mAcc['budget'][0] ?? 0,
+                                'pm_var'         => $mAcc['var'][0] ?? 0,
+                                'pm_var_percent' => $mAcc['var_percent'][0] ?? '-',
+                                // Kolom Sampai Tahun Ini (Year to Date)
+                                'py_actual'      => $yAcc['actual'][0] ?? 0,
+                                'py_budget'      => $yAcc['budget'][0] ?? 0,
+                                'py_var'         => $yAcc['var'][0] ?? 0,
+                                'py_var_percent' => $yAcc['var_percent'][0] ?? '-',
+                            ];
+                        }
+                    }
+                    $row['children'][] = $childData;
+                }
+            }
+
+            $merged[] = $row;
+        }
+
+        return $merged;
     }
 }
