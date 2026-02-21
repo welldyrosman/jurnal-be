@@ -84,40 +84,104 @@ class DashboardController extends Controller
     public function indexQontak(Request $request): JsonResponse
     {
         try {
+
             $validator = Validator::make($request->all(), [
-                'start_date' => 'required|date_format:d/m/Y',
-                'end_date'   => 'required|date_format:d/m/Y|after_or_equal:start_date',
-                'metric'     => 'nullable|in:qty,amount',
+                'start_date'      => 'required|date_format:d/m/Y',
+                'end_date'        => 'required|date_format:d/m/Y|after_or_equal:start_date',
+                'metric'          => 'nullable|in:qty,amount',
+                'selected_period' => 'nullable|in:daily,weekly,monthly',
             ]);
 
             if ($validator->fails()) {
                 throw new ValidationException($validator);
             }
 
-            $startDateApi = Carbon::createFromFormat('d/m/Y', $request->start_date)->format('Y-m-d');
-            $endDateApi   = Carbon::createFromFormat('d/m/Y', $request->end_date)->format('Y-m-d');
-            $metric       = $request->metric ?? 'qty';
+            $metric         = $request->metric ?? 'qty';
+            $selectedPeriod = $request->selected_period ?? 'monthly';
 
-            $cacheKey = "dashboards-qontak:{$startDateApi}:{$endDateApi}:{$metric}";
-            $dashboardData = Cache::remember($cacheKey, 10, function () use ($startDateApi, $endDateApi, $metric) {
+            $startDate = Carbon::createFromFormat('d/m/Y', $request->start_date)->startOfDay();
+            $endDate   = Carbon::createFromFormat('d/m/Y', $request->end_date)->endOfDay();
 
-                $dealwonchart          = $this->qontakDashboardService->getChartWonByActor($metric, $startDateApi, $endDateApi);
-                $startDateInThisYear   = Carbon::parse($endDateApi)->startOfYear()->format('Y-m-d');
-                $endDateInThisYear     = Carbon::parse($endDateApi)->endOfYear()->format('Y-m-d');
-                $year                  = Carbon::parse($endDateApi)->endOfYear()->format('Y');
-                // 1. Ambil semua data dalam satu query
-                $rawResult = QontakDeal::select('crm_pipeline_name', 'crm_stage_name', DB::raw('COUNT(*) as total'))
-                    ->whereIn('crm_pipeline_name', ['Public Training', 'Konsultasi', 'In-House Training'])
-                    ->orWhereNull('crm_pipeline_name') // Jika ada yang null tapi ingin dihitung di total
+            $startDateApi = $startDate->format('Y-m-d');
+            $endDateApi   = $endDate->format('Y-m-d');
+
+            $cacheKey = "dashboards-qontak:{$startDateApi}:{$endDateApi}:{$metric}:{$selectedPeriod}";
+
+            $dashboardData = Cache::remember($cacheKey, 10, function () use (
+                $startDate,
+                $endDate,
+                $metric,
+                $selectedPeriod,
+                $startDateApi,
+                $endDateApi
+            ) {
+
+                /*
+            |--------------------------------------------------------------------------
+            | BASE QUERY (FILTER FIX)
+            |--------------------------------------------------------------------------
+            */
+
+                $baseQuery = QontakDeal::whereBetween(
+                    'created_at_qontak',
+                    [$startDate, $endDate]
+                );
+
+                /*
+            |--------------------------------------------------------------------------
+            | SALES PERFORMANCE ANALYSIS (Daily/Weekly/Monthly)
+            |--------------------------------------------------------------------------
+            */
+
+                if ($selectedPeriod === 'daily') {
+                    $format = '%Y-%m-%d';
+                } elseif ($selectedPeriod === 'weekly') {
+                    $format = '%x-W%v';
+                } else {
+                    $format = '%Y-%m';
+                }
+
+                $salesPerformance = (clone $baseQuery)
+                    ->selectRaw("
+                    DATE_FORMAT(created_at_qontak, '{$format}') as period,
+                    " . ($metric === 'amount'
+                        ? "SUM(amount)"
+                        : "COUNT(*)"
+                    ) . " as total
+                ")
+                    ->groupBy('period')
+                    ->orderBy('period')
+                    ->get();
+
+                /*
+            |--------------------------------------------------------------------------
+            | DEAL WON CHART (EXISTING SERVICE)
+            |--------------------------------------------------------------------------
+            */
+
+                $dealwonchart = app(QontakDashboardService::class)
+                    ->getChartWonByActor($metric, $startDateApi, $endDateApi);
+
+                /*
+            |--------------------------------------------------------------------------
+            | DEAL BY STAGE (SEMUA PIPELINE)
+            |--------------------------------------------------------------------------
+            */
+
+                $rawResult = (clone $baseQuery)
+                    ->select('crm_pipeline_name', 'crm_stage_name', DB::raw('COUNT(*) as total'))
+                    ->whereIn('crm_pipeline_name', [
+                        'Public Training',
+                        'Konsultasi',
+                        'In-House Training'
+                    ])
                     ->groupBy('crm_pipeline_name', 'crm_stage_name')
                     ->get();
 
-                // 2. Gunakan Collection untuk memfilter data tanpa query ulang
                 $dataPublic     = $rawResult->where('crm_pipeline_name', 'Public Training')->values();
                 $dataKonsultasi = $rawResult->where('crm_pipeline_name', 'Konsultasi')->values();
                 $dataInhouse    = $rawResult->where('crm_pipeline_name', 'In-House Training')->values();
 
-                // 3. Untuk $data (Total Gabungan), kita grouping ulang di level PHP
                 $data = $rawResult->groupBy('crm_stage_name')
                     ->map(function ($items, $stage) {
                         return [
@@ -127,34 +191,107 @@ class DashboardController extends Controller
                     })
                     ->sortByDesc('total')
                     ->values();
-                $totalWon = QontakDeal::where('crm_stage_name', 'Won')->count();
-                $totalLost = QontakDeal::where('crm_stage_name', 'Cancelled')->count();
+
+                /*
+            |--------------------------------------------------------------------------
+            | SUMMARY METRICS (FILTERED)
+            |--------------------------------------------------------------------------
+            */
+
+                $totalWon = (clone $baseQuery)
+                    ->where('crm_stage_name', 'Won')
+                    ->count();
+
+                $totalLost = (clone $baseQuery)
+                    ->where('crm_stage_name', 'Cancelled')
+                    ->count();
+
                 $totalClosed = $totalWon + $totalLost;
-                $winRate = $totalClosed > 0 ? ($totalWon / $totalClosed) * 100 : 0;
-                $openPipelineValue = QontakDeal::whereNotIn('crm_stage_name', ['Won', 'Cancelled'])
+
+                $winRate = $totalClosed > 0
+                    ? ($totalWon / $totalClosed) * 100
+                    : 0;
+
+                $sumPipeline = (clone $baseQuery)
+                    ->where('crm_stage_name', 'Won')
                     ->sum('amount');
 
-                $avgDealValue = $totalWon > 0 ? QontakDeal::where('crm_stage_name', 'Won')->avg('amount') : 0;
+                $avgDealValue = $totalWon > 0
+                    ? (clone $baseQuery)
+                    ->where('crm_stage_name', 'Won')
+                    ->avg('amount')
+                    : 0;
+
+                $openPipelineValue = (clone $baseQuery)
+                    ->whereNotIn('crm_stage_name', ['Won', 'Cancelled'])
+                    ->sum('amount');
+
+                /*
+            |--------------------------------------------------------------------------
+            | TOP EMPLOYEE BY LEAD
+            |--------------------------------------------------------------------------
+            */
+
+                $topLeadEmployee = (clone $baseQuery)
+                    ->whereNotIn('crm_stage_name', ['Won', 'Cancelled'])
+                    ->select(
+                        'creator_name',
+                        'creator_id',
+                        DB::raw('COUNT(*) as total')
+                    )
+                    ->groupBy('creator_id', 'creator_name')
+                    ->orderByDesc('total')
+                    ->get();
+
+                /*
+            |--------------------------------------------------------------------------
+            | TOP EMPLOYEE BY WON
+            |--------------------------------------------------------------------------
+            */
+
+                $topWonEmployee = (clone $baseQuery)
+                    ->where('crm_stage_name', 'Won')
+                    ->select(
+                        'creator_name',
+                        'creator_id',
+                        DB::raw('COUNT(*) as total')
+                    )
+                    ->groupBy('creator_id', 'creator_name')
+                    ->orderByDesc('total')
+                    ->get();
+
                 return [
-                    'year'           => $endDateApi,
-                    'deal_by_stage'  => $data,
-                    'deal_by_stage_public'  => $dataPublic,
-                    'deal_by_stage_konsultasi'  => $dataKonsultasi,
-                    'deal_by_stage_inhouse'  => $dataInhouse,
-                    'sumpipeline'    => QontakDeal::where('crm_stage_name', 'Won')->sum('amount'),
-                    'total_won'         => $totalWon,
-                    'win_rate'          => round($winRate, 2),
-                    'avg_deal_value'    => $avgDealValue,
-                    'open_pipeline_value' => $openPipelineValue,
-                    'dealwonchart'   => $dealwonchart
+                    // ===== EXISTING PROPS (TIDAK DIHAPUS) =====
+                    'year'                       => $endDateApi,
+                    'deal_by_stage'              => $data,
+                    'deal_by_stage_public'       => $dataPublic,
+                    'deal_by_stage_konsultasi'   => $dataKonsultasi,
+                    'deal_by_stage_inhouse'      => $dataInhouse,
+                    'sumpipeline'                => $sumPipeline,
+                    'total_won'                  => $totalWon,
+                    'win_rate'                   => round($winRate, 2),
+                    'avg_deal_value'             => $avgDealValue,
+                    'open_pipeline_value'        => $openPipelineValue,
+                    'dealwonchart'               => $dealwonchart,
+
+                    // ===== NEW FEATURE =====
+                    'selected_period'            => $selectedPeriod,
+                    'metric'                     => $metric,
+                    'sales_performance'          => $salesPerformance,
+                    'top_lead_employee'          => $topLeadEmployee,
+                    'top_won_employee'           => $topWonEmployee,
                 ];
             });
 
             return $this->successResponse($dashboardData, 'Laporan berhasil diambil');
         } catch (ValidationException $e) {
+
             return $this->errorResponse('Data yang diberikan tidak valid', 422, $e->errors());
         } catch (\Exception $e) {
-            return $this->errorResponse('Gagal mengambil laporan dari Jurnal', 500, ['detail' => $e->getMessage()]);
+
+            return $this->errorResponse('Gagal mengambil laporan', 500, [
+                'detail' => $e->getMessage()
+            ]);
         }
     }
 
