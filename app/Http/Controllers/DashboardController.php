@@ -48,7 +48,7 @@ class DashboardController extends Controller
             $startDateApi = Carbon::createFromFormat('d/m/Y', $request->start_date)->format('Y-m-d');
             $endDateApi = Carbon::createFromFormat('d/m/Y', $request->end_date)->format('Y-m-d');
             $metric = $request->metric ?? 'qty';
-            $cacheKey     = "dashboards:{$startDateApi}:{$endDateApi}:{$metric}";
+            $cacheKey     = "dashboards-jurnal-bu:{$startDateApi}:{$endDateApi}:{$metric}";
             $dashboardData = Cache::remember($cacheKey, 300, function () use ($startDateApi, $endDateApi, $metric) {
 
                 $dealwonchart = $this->qontakDashboardService->getChartWonByActor($metric, $startDateApi, $endDateApi);
@@ -98,7 +98,7 @@ class DashboardController extends Controller
             $endDateApi   = Carbon::createFromFormat('d/m/Y', $request->end_date)->format('Y-m-d');
             $metric       = $request->metric ?? 'qty';
 
-            $cacheKey = "dashboards:{$startDateApi}:{$endDateApi}:{$metric}";
+            $cacheKey = "dashboards-qontak:{$startDateApi}:{$endDateApi}:{$metric}";
             $dashboardData = Cache::remember($cacheKey, 10, function () use ($startDateApi, $endDateApi, $metric) {
 
                 $dealwonchart          = $this->qontakDashboardService->getChartWonByActor($metric, $startDateApi, $endDateApi);
@@ -306,7 +306,7 @@ class DashboardController extends Controller
             $endDateApi   = Carbon::createFromFormat('d/m/Y', $request->end_date)->format('Y-m-d');
             $metric       = $request->metric ?? 'qty';
 
-            $cacheKey = "dashboards:{$startDateApi}:{$endDateApi}:{$metric}";
+            $cacheKey = "dashboards-jurnal:{$startDateApi}:{$endDateApi}:{$metric}";
             $dashboardData = Cache::remember($cacheKey, 10, function () use ($startDateApi, $endDateApi, $metric) {
 
                 $reportData            = $this->balanceSheetService->getReport(['end_date' => $endDateApi]);
