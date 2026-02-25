@@ -222,8 +222,15 @@ class GeneralLedgerService extends JurnalBaseService
                     ->get();
 
                 foreach ($amounts as $row) {
-                    if ($row->period_index >= 0 && $row->period_index < 12) {
-                        $budget[$row->period_index] = (float) $row->total;
+                    $rawPeriodIndex = (int) $row->period_index;
+
+                    // Support both 0-11 and 1-12 period formats from DB.
+                    $monthIndex = $rawPeriodIndex >= 1 && $rawPeriodIndex <= 12
+                        ? $rawPeriodIndex - 1
+                        : $rawPeriodIndex;
+
+                    if ($monthIndex >= 0 && $monthIndex < 12) {
+                        $budget[$monthIndex] = (float) $row->total;
                     }
                 }
             }
