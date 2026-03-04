@@ -11,6 +11,8 @@ use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\QontakDealController;
 use App\Http\Controllers\QontakDealReportController;
 use App\Http\Controllers\ReportController;
+use App\Http\Controllers\RolePermissionController;
+use App\Http\Controllers\SidebarMenuController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 
@@ -18,20 +20,20 @@ Route::get('/user', function (Request $request) {
     return $request->user();
 })->middleware('auth:sanctum');
 
-
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
 
     Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
 });
+
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/dashboard', [DashboardController::class, 'index']);
     Route::post('/dashboard-qontak', [DashboardController::class, 'indexQontak']);
 });
 
-
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
     Route::get('/local/sales_invoices', [JurnalLocalApiController::class, 'getSalesInvoices']);
+
     Route::prefix('budgets')->group(function () {
         Route::get('/', [AccountController::class, 'index']);
         Route::get('/grouping-options', [AccountController::class, 'getGroupingOptions']);
@@ -42,6 +44,7 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::post('/import', [AccountController::class, 'importPreview']);
         Route::post('/import-save', [AccountController::class, 'importSave']);
     });
+
     Route::prefix('account/grouping')->group(function () {
         Route::post('/', [AccountGroupingController::class, 'store']);
         Route::put('/{id}', [AccountGroupingController::class, 'update']);
@@ -52,12 +55,14 @@ Route::prefix('v1')->middleware('auth:sanctum')->group(function () {
         Route::get('/', [AccountController::class, 'getallccoa']);
     });
 });
+
 Route::middleware('auth:sanctum')->get('/test-export', function () {
     return \Maatwebsite\Excel\Facades\Excel::download(
         new \App\Exports\BudgetsExport(2025),
         'test.xlsx'
     );
 });
+
 Route::prefix('qontak/reports')->group(function () {
     Route::get('by-stage', [QontakDealReportController::class, 'byStage']);
     Route::get('amount-by-stage', [QontakDealReportController::class, 'amountByStage']);
@@ -71,15 +76,30 @@ Route::resource('users', UserController::class)->only([
     'store',
     'show',
     'update',
-    'destroy'
+    'destroy',
 ]);
+
 Route::get('/companies', [CompanyController::class, 'index']);
 Route::post('/companies', [CompanyController::class, 'store']);
 
 Route::get('/pipelines', [PipelineController::class, 'getpipelines']);
-
 Route::get('/qontak-deal', [QontakDealController::class, 'getDeals']);
+
+Route::middleware('auth:sanctum')->get('/sidebar-menus', [SidebarMenuController::class, 'index']);
 
 Route::get('/labarugi', [ReportController::class, 'labaRugiReport']);
 Route::get('/budget-vs-actual', [ReportController::class, 'newLabaRugiBudgetVsActual']);
 Route::get('/labarugi-budget-vs-actual', [ReportController::class, 'labaRugiBudgetVsActual']);
+
+Route::middleware('auth:sanctum')->prefix('role-permissions')->group(function () {
+    Route::get('/', [RolePermissionController::class, 'index']);
+
+    Route::post('/roles', [RolePermissionController::class, 'storeRole']);
+    Route::put('/roles/{role}', [RolePermissionController::class, 'updateRole']);
+    Route::delete('/roles/{role}', [RolePermissionController::class, 'destroyRole']);
+
+    Route::put('/roles/{role}/permissions', [RolePermissionController::class, 'syncPermissions']);
+
+    Route::post('/roles/{role}/users', [RolePermissionController::class, 'assignUsers']);
+    Route::delete('/roles/{role}/users/{user}', [RolePermissionController::class, 'removeUser']);
+});
