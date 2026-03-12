@@ -26,6 +26,7 @@ class QontakDashboardV2Controller extends Controller
                 'selected_period' => ['nullable', Rule::in(['daily', 'weekly', 'monthly'])],
                 'pipeline_id' => ['nullable', 'string', 'max:100'],
                 'pipeline_name' => ['nullable', 'string', 'max:255'],
+                'stage_name' => ['nullable', 'string', 'max:255'],
                 'team_name' => ['nullable', 'string', 'max:255'],
                 'source_entity' => ['nullable', Rule::in(['all', 'contacts', 'companies', 'deals'])],
                 'month' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
@@ -78,6 +79,7 @@ class QontakDashboardV2Controller extends Controller
                 'selected_period' => ['nullable', Rule::in(['daily', 'weekly', 'monthly'])],
                 'pipeline_id' => ['nullable', 'string', 'max:100'],
                 'pipeline_name' => ['nullable', 'string', 'max:255'],
+                'stage_name' => ['nullable', 'string', 'max:255'],
                 'team_name' => ['nullable', 'string', 'max:255'],
                 'source_entity' => ['nullable', Rule::in(['all', 'contacts', 'companies', 'deals'])],
                 'month' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
@@ -117,6 +119,31 @@ class QontakDashboardV2Controller extends Controller
             );
         } catch (\Throwable $e) {
             return $this->errorResponse('Gagal mengambil data team dashboard Qontak 2', 500, [
+                'detail' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function stageOptions(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'pipeline_name' => ['nullable', 'string', 'max:255'],
+                'team_name' => ['nullable', 'string', 'max:255'],
+            ]);
+
+            if ($validator->fails()) {
+                throw new ValidationException($validator);
+            }
+
+            return $this->successResponse(
+                $this->service->stageOptions($validator->validated()),
+                'Data stage dashboard Qontak 2 berhasil diambil'
+            );
+        } catch (ValidationException $e) {
+            return $this->errorResponse('Data yang diberikan tidak valid', 422, $e->errors());
+        } catch (\Throwable $e) {
+            return $this->errorResponse('Gagal mengambil data stage dashboard Qontak 2', 500, [
                 'detail' => $e->getMessage(),
             ]);
         }

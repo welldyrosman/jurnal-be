@@ -41,6 +41,7 @@ class QontakDashboardV2Service
                 'selected_period' => $normalized['selected_period'],
                 'pipeline_id' => $normalized['pipeline_id'],
                 'pipeline_name' => $normalized['pipeline_name'],
+                'stage_name' => $normalized['stage_name'],
                 'team_name' => $normalized['team_name'],
                 'source_entity' => $normalized['source_entity'],
                 'month' => $normalized['month'],
@@ -84,6 +85,36 @@ class QontakDashboardV2Service
             ->distinct()
             ->orderBy('team_name')
             ->pluck('team_name')
+            ->map(fn($name) => (string) $name)
+            ->values()
+            ->all();
+
+        return ['items' => $items];
+    }
+
+    public function stageOptions(array $filters = []): array
+    {
+        if (!Schema::hasTable('qontak_deals')) {
+            return ['items' => []];
+        }
+
+        $query = DB::table('qontak_deals as d')
+            ->selectRaw('TRIM(d.crm_stage_name) as stage_name')
+            ->whereNotNull('d.crm_stage_name')
+            ->whereRaw("TRIM(d.crm_stage_name) <> ''");
+
+        if (!empty($filters['pipeline_name']) && strtolower((string) $filters['pipeline_name']) !== 'all') {
+            $query->where('d.crm_pipeline_name', (string) $filters['pipeline_name']);
+        }
+
+        if (!empty($filters['team_name']) && strtolower((string) $filters['team_name']) !== 'all') {
+            $this->applyTeamFilter($query, ['team_name' => (string) $filters['team_name']], 'd');
+        }
+
+        $items = $query
+            ->distinct()
+            ->orderBy('stage_name')
+            ->pluck('stage_name')
             ->map(fn($name) => (string) $name)
             ->values()
             ->all();
@@ -147,6 +178,9 @@ class QontakDashboardV2Service
             'selected_period' => $selectedPeriod,
             'pipeline_id' => isset($filters['pipeline_id']) && $filters['pipeline_id'] !== '' ? (string) $filters['pipeline_id'] : null,
             'pipeline_name' => isset($filters['pipeline_name']) && $filters['pipeline_name'] !== '' ? (string) $filters['pipeline_name'] : null,
+            'stage_name' => isset($filters['stage_name']) && $filters['stage_name'] !== '' && strtolower((string) $filters['stage_name']) !== 'all'
+                ? (string) $filters['stage_name']
+                : null,
             'team_name' => isset($filters['team_name']) && $filters['team_name'] !== '' && strtolower((string) $filters['team_name']) !== 'all'
                 ? (string) $filters['team_name']
                 : null,
@@ -758,6 +792,9 @@ class QontakDashboardV2Service
 
             $this->applyPipelineFilter($dealQuery, $filters, 'd');
             $this->applyTeamFilter($dealQuery, $filters, 'd');
+            if (!empty($filters['stage_name'])) {
+                $dealQuery->where('d.crm_stage_name', (string) $filters['stage_name']);
+            }
 
             $entities['deals'] = $dealQuery
                 ->groupBy('source_name')

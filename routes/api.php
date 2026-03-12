@@ -39,6 +39,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/dashboard-qontak-2', [QontakDashboardV2Controller::class, 'index']);
     Route::post('/dashboard-qontak-2/content/{code}', [QontakDashboardV2Controller::class, 'content']);
     Route::get('/dashboard-qontak-2/team-options', [QontakDashboardV2Controller::class, 'teamOptions']);
+    Route::get('/dashboard-qontak-2/stage-options', [QontakDashboardV2Controller::class, 'stageOptions']);
     Route::get('/dashboard-qontak-2/embed-card', [DashboardController::class, 'qontak2EmbedCard']);
     Route::post('/dashboard-qontak-2/embed-cards', [DashboardController::class, 'qontak2EmbedCards']);
 });
