@@ -44,17 +44,21 @@ class AuthController extends Controller
                 'name'  => $user->name,
                 'email' => $user->email,
                 'role'  => $user->role,
+                'role_id' => $user->role_id,
             ]
         ]);
     }
 
     public function logout(Request $request)
     {
-        // Hapus token saat ini
-        $request->user()->currentAccessToken()->delete();
+        $user = $request->user();
+        if ($user) {
+            $token = $user->currentAccessToken();
+            if ($token) {
+                $token->delete();
+            }
+        }
 
-        return response()->json([
-            'message' => 'Logout berhasil'
-        ]);
+        return $this->successResponse([], 'Logout berhasil');
     }
 }

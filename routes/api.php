@@ -13,6 +13,7 @@ use App\Http\Controllers\QontakDealReportController;
 use App\Http\Controllers\QontakDashboardV2Controller;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RolePermissionController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\SidebarMenuController;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
@@ -24,7 +25,12 @@ Route::get('/user', function (Request $request) {
 Route::prefix('auth')->group(function () {
     Route::post('/login', [AuthController::class, 'login']);
 
-    Route::middleware('auth:sanctum')->post('/logout', [AuthController::class, 'logout']);
+    Route::middleware('auth:sanctum')->group(function () {
+        Route::post('/logout', [AuthController::class, 'logout']);
+        Route::get('/profile', [ProfileController::class, 'show']);
+        Route::put('/profile', [ProfileController::class, 'update']);
+        Route::put('/change-password', [ProfileController::class, 'changePassword']);
+    });
 });
 
 Route::middleware('auth:sanctum')->group(function () {
@@ -32,6 +38,7 @@ Route::middleware('auth:sanctum')->group(function () {
     Route::post('/dashboard-qontak', [DashboardController::class, 'indexQontak']);
     Route::post('/dashboard-qontak-2', [QontakDashboardV2Controller::class, 'index']);
     Route::post('/dashboard-qontak-2/content/{code}', [QontakDashboardV2Controller::class, 'content']);
+    Route::get('/dashboard-qontak-2/team-options', [QontakDashboardV2Controller::class, 'teamOptions']);
     Route::get('/dashboard-qontak-2/embed-card', [DashboardController::class, 'qontak2EmbedCard']);
     Route::post('/dashboard-qontak-2/embed-cards', [DashboardController::class, 'qontak2EmbedCards']);
 });

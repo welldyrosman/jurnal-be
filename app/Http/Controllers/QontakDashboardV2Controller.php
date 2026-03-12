@@ -26,10 +26,15 @@ class QontakDashboardV2Controller extends Controller
                 'selected_period' => ['nullable', Rule::in(['daily', 'weekly', 'monthly'])],
                 'pipeline_id' => ['nullable', 'string', 'max:100'],
                 'pipeline_name' => ['nullable', 'string', 'max:255'],
+                'team_name' => ['nullable', 'string', 'max:255'],
                 'source_entity' => ['nullable', Rule::in(['all', 'contacts', 'companies', 'deals'])],
                 'month' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
                 'task_status_id' => ['nullable', 'string', 'max:50'],
                 'task_priority_id' => ['nullable', 'string', 'max:50'],
+                'page' => ['nullable', 'integer', 'min:1'],
+                'rowsPerPage' => ['nullable', 'integer', 'min:1', 'max:100'],
+                'sortBy' => ['nullable', 'string', 'max:100'],
+                'sortType' => ['nullable', Rule::in(['asc', 'desc'])],
                 'include' => ['nullable', 'array'],
                 'include.*' => ['string', Rule::in(QontakDashboardV2Service::CONTENT_CODES)],
             ]);
@@ -73,10 +78,15 @@ class QontakDashboardV2Controller extends Controller
                 'selected_period' => ['nullable', Rule::in(['daily', 'weekly', 'monthly'])],
                 'pipeline_id' => ['nullable', 'string', 'max:100'],
                 'pipeline_name' => ['nullable', 'string', 'max:255'],
+                'team_name' => ['nullable', 'string', 'max:255'],
                 'source_entity' => ['nullable', Rule::in(['all', 'contacts', 'companies', 'deals'])],
                 'month' => ['nullable', 'regex:/^\d{4}-\d{2}$/'],
                 'task_status_id' => ['nullable', 'string', 'max:50'],
                 'task_priority_id' => ['nullable', 'string', 'max:50'],
+                'page' => ['nullable', 'integer', 'min:1'],
+                'rowsPerPage' => ['nullable', 'integer', 'min:1', 'max:100'],
+                'sortBy' => ['nullable', 'string', 'max:100'],
+                'sortType' => ['nullable', Rule::in(['asc', 'desc'])],
             ]);
 
             if ($validator->fails()) {
@@ -93,6 +103,20 @@ class QontakDashboardV2Controller extends Controller
             return $this->errorResponse('Data yang diberikan tidak valid', 422, $e->errors());
         } catch (\Throwable $e) {
             return $this->errorResponse('Gagal mengambil data konten dashboard Qontak 2', 500, [
+                'detail' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    public function teamOptions(): JsonResponse
+    {
+        try {
+            return $this->successResponse(
+                $this->service->teamOptions(),
+                'Data team dashboard Qontak 2 berhasil diambil'
+            );
+        } catch (\Throwable $e) {
+            return $this->errorResponse('Gagal mengambil data team dashboard Qontak 2', 500, [
                 'detail' => $e->getMessage(),
             ]);
         }

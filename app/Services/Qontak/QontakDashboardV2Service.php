@@ -41,6 +41,7 @@ class QontakDashboardV2Service
                 'selected_period' => $normalized['selected_period'],
                 'pipeline_id' => $normalized['pipeline_id'],
                 'pipeline_name' => $normalized['pipeline_name'],
+                'team_name' => $normalized['team_name'],
                 'source_entity' => $normalized['source_entity'],
                 'month' => $normalized['month'],
                 'task_status_id' => $normalized['task_status_id'],
@@ -68,6 +69,26 @@ class QontakDashboardV2Service
             'code' => $code,
             'data' => $this->buildContentByCode($code, $normalized),
         ];
+    }
+
+    public function teamOptions(): array
+    {
+        if (!Schema::hasTable('qontak_tasks')) {
+            return ['items' => []];
+        }
+
+        $items = DB::table('qontak_tasks')
+            ->selectRaw('TRIM(crm_team_name) as team_name')
+            ->whereNotNull('crm_team_name')
+            ->whereRaw("TRIM(crm_team_name) <> ''")
+            ->distinct()
+            ->orderBy('team_name')
+            ->pluck('team_name')
+            ->map(fn($name) => (string) $name)
+            ->values()
+            ->all();
+
+        return ['items' => $items];
     }
 
     private function buildContentByCode(string $code, array $normalized): mixed
@@ -126,10 +147,17 @@ class QontakDashboardV2Service
             'selected_period' => $selectedPeriod,
             'pipeline_id' => isset($filters['pipeline_id']) && $filters['pipeline_id'] !== '' ? (string) $filters['pipeline_id'] : null,
             'pipeline_name' => isset($filters['pipeline_name']) && $filters['pipeline_name'] !== '' ? (string) $filters['pipeline_name'] : null,
+            'team_name' => isset($filters['team_name']) && $filters['team_name'] !== '' && strtolower((string) $filters['team_name']) !== 'all'
+                ? (string) $filters['team_name']
+                : null,
             'source_entity' => $sourceEntity,
             'month' => $month,
             'task_status_id' => isset($filters['task_status_id']) && $filters['task_status_id'] !== '' ? (string) $filters['task_status_id'] : null,
             'task_priority_id' => isset($filters['task_priority_id']) && $filters['task_priority_id'] !== '' ? (string) $filters['task_priority_id'] : null,
+            'page' => max(1, (int) ($filters['page'] ?? 1)),
+            'rows_per_page' => min(100, max(1, (int) ($filters['rowsPerPage'] ?? 10))),
+            'sort_by' => isset($filters['sortBy']) && $filters['sortBy'] !== '' ? (string) $filters['sortBy'] : 'date',
+            'sort_type' => strtolower((string) ($filters['sortType'] ?? 'desc')) === 'asc' ? 'asc' : 'desc',
         ];
     }
 
@@ -185,6 +213,30 @@ class QontakDashboardV2Service
         }
     }
 
+    private function applyTeamFilter($query, array $filters, string $alias = 'd'): void
+    {
+        if (empty($filters['team_name'])) {
+            return;
+        }
+
+        $teamName = (string) $filters['team_name'];
+        if ($alias === 't') {
+            $query->where("{$alias}.crm_team_name", $teamName);
+            return;
+        }
+
+        if (!Schema::hasTable('qontak_tasks')) {
+            return;
+        }
+
+        $query->whereExists(function ($subQuery) use ($alias, $teamName) {
+            $subQuery->select(DB::raw(1))
+                ->from('qontak_tasks as tq')
+                ->whereColumn('tq.qontak_deal_id', "{$alias}.id")
+                ->where('tq.crm_team_name', $teamName);
+        });
+    }
+
     private function periodLabel(Carbon $date, string $selectedPeriod): string
     {
         return match ($selectedPeriod) {
@@ -219,6 +271,7 @@ class QontakDashboardV2Service
             ->whereBetween('h.moved_date', [$start, $end]);
 
         $this->applyPipelineFilter($sub, $filters, 'd');
+        $this->applyTeamFilter($sub, $filters, 'd');
 
         $sub
             ->select('h.crm_deal_id', DB::raw('MIN(h.moved_date) as won_at'))
@@ -292,6 +345,7 @@ class QontakDashboardV2Service
             ->whereNotNull('h.moved_date');
 
         $this->applyPipelineFilter($sub, $filters, 'd');
+        $this->applyTeamFilter($sub, $filters, 'd');
 
         $sub
             ->selectRaw('h.crm_deal_id, YEAR(h.moved_date) as won_year, MIN(h.moved_date) as won_at')
@@ -428,6 +482,12 @@ class QontakDashboardV2Service
                 'by_actor' => [],
                 'by_target' => [],
                 'by_entity_type' => [],
+                'events' => [],
+                'pagination' => [
+                    'page' => $filters['page'],
+                    'rowsPerPage' => $filters['rows_per_page'],
+                    'total' => 0,
+                ],
                 'notes' => ['Timeline table belum tersedia.'],
             ];
         }
@@ -444,7 +504,16 @@ class QontakDashboardV2Service
             $this->applyPipelineFilter($query, $filters, 'd');
         }
 
-        $events = $query
+        if (!empty($filters['team_name']) && Schema::hasTable('qontak_tasks')) {
+            $query->whereExists(function ($subQuery) use ($filters) {
+                $subQuery->select(DB::raw(1))
+                    ->from('qontak_tasks as tq')
+                    ->whereColumn('tq.qontak_deal_id', 't.qontak_deal_id')
+                    ->where('tq.crm_team_name', (string) $filters['team_name']);
+            });
+        }
+
+        $events = (clone $query)
             ->select([
                 't.entity_type',
                 't.actor',
@@ -454,16 +523,44 @@ class QontakDashboardV2Service
             ])
             ->get();
 
+        $sortByColumn = match (strtolower((string) ($filters['sort_by'] ?? 'date'))) {
+            'action' => 't.action',
+            'note' => 't.summary',
+            default => 't.event_at',
+        };
+
+        $sortType = strtolower((string) ($filters['sort_type'] ?? 'desc')) === 'asc' ? 'asc' : 'desc';
+        $page = max(1, (int) ($filters['page'] ?? 1));
+        $rowsPerPage = min(100, max(1, (int) ($filters['rows_per_page'] ?? 10)));
+        $offset = ($page - 1) * $rowsPerPage;
+
+        $totalEvents = (clone $query)->count();
+        $pagedRows = (clone $query)
+            ->select([
+                't.event_at',
+                't.action',
+                't.target',
+                't.summary',
+            ])
+            ->orderBy($sortByColumn, $sortType)
+            ->offset($offset)
+            ->limit($rowsPerPage)
+            ->get();
+
         $byAction = [];
         $byActor = [];
         $byTarget = [];
         $byEntityType = [];
+        $eventRows = [];
 
         foreach ($events as $event) {
             $actionClass = $this->classifyAction($event->action, $event->summary);
             $actor = trim((string) ($event->actor ?? 'Unknown'));
             $target = trim((string) ($event->target ?? 'Unknown'));
             $entityType = trim((string) ($event->entity_type ?? 'unknown'));
+            $summary = trim((string) ($event->summary ?? ''));
+            $actionText = trim((string) ($event->action ?? ''));
+            $note = $summary !== '' ? $summary : trim($actionText . ' ' . $target);
 
             if ($actor === '') {
                 $actor = 'Unknown';
@@ -474,19 +571,45 @@ class QontakDashboardV2Service
             if ($entityType === '') {
                 $entityType = 'unknown';
             }
+            if ($note === '') {
+                $note = '-';
+            }
 
             $byAction[$actionClass] = ($byAction[$actionClass] ?? 0) + 1;
             $byActor[$actor] = ($byActor[$actor] ?? 0) + 1;
             $byTarget[$target] = ($byTarget[$target] ?? 0) + 1;
             $byEntityType[$entityType] = ($byEntityType[$entityType] ?? 0) + 1;
+
+        }
+
+        foreach ($pagedRows as $row) {
+            $actionClass = $this->classifyAction($row->action, $row->summary);
+            $summary = trim((string) ($row->summary ?? ''));
+            $actionText = trim((string) ($row->action ?? ''));
+            $target = trim((string) ($row->target ?? ''));
+            $note = $summary !== '' ? $summary : trim($actionText . ' ' . $target);
+
+            $eventRows[] = [
+                'date' => $row->event_at
+                    ? Carbon::parse($row->event_at, 'Asia/Jakarta')->format('Y-m-d H:i:s')
+                    : null,
+                'action' => $actionClass,
+                'note' => $note !== '' ? $note : '-',
+            ];
         }
 
         return [
-            'total_events' => (int) $events->count(),
+            'total_events' => (int) $totalEvents,
             'by_action' => $this->sortMapDesc($byAction),
             'by_actor' => $this->sortMapDesc($byActor, 15),
             'by_target' => $this->sortMapDesc($byTarget, 15),
             'by_entity_type' => $this->sortMapDesc($byEntityType),
+            'events' => $eventRows,
+            'pagination' => [
+                'page' => $page,
+                'rowsPerPage' => $rowsPerPage,
+                'total' => (int) $totalEvents,
+            ],
             'notes' => [
                 'Summary report dihitung dari timeline entity yang tersinkron (deal/contact/company).',
             ],
@@ -534,6 +657,7 @@ class QontakDashboardV2Service
             ]);
 
         $this->applyPipelineFilter($query, $filters, 'd');
+        $this->applyTeamFilter($query, $filters, 'd');
 
         $rows = $query
             ->select([
@@ -633,6 +757,7 @@ class QontakDashboardV2Service
                 ]);
 
             $this->applyPipelineFilter($dealQuery, $filters, 'd');
+            $this->applyTeamFilter($dealQuery, $filters, 'd');
 
             $entities['deals'] = $dealQuery
                 ->groupBy('source_name')
@@ -687,6 +812,7 @@ class QontakDashboardV2Service
             ]);
 
         $this->applyPipelineFilter($sub, $filters, 'd');
+        $this->applyTeamFilter($sub, $filters, 'd');
 
         $sub
             ->select('h.crm_deal_id', DB::raw('MIN(h.moved_date) as lost_at'))
@@ -740,6 +866,8 @@ class QontakDashboardV2Service
             $query->where('t.crm_task_priority_id', (string) $filters['task_priority_id']);
         }
 
+        $this->applyTeamFilter($query, $filters, 't');
+
         if (!empty($filters['pipeline_id']) || !empty($filters['pipeline_name'])) {
             $query->leftJoin('qontak_deals as d', 'd.id', '=', 't.qontak_deal_id');
             $this->applyPipelineFilter($query, $filters, 'd');
@@ -769,6 +897,7 @@ class QontakDashboardV2Service
                 't.crm_task_status_id',
                 't.crm_task_priority_id',
                 't.crm_task_category_name',
+                't.crm_team_name',
                 't.due_date',
                 't.reminder_date',
                 't.user_full_name',
@@ -798,6 +927,7 @@ class QontakDashboardV2Service
                 'status_id' => $row->crm_task_status_id,
                 'priority_id' => $row->crm_task_priority_id,
                 'category_name' => $row->crm_task_category_name,
+                'team_name' => $row->crm_team_name,
                 'due_date' => $row->due_date,
                 'reminder_date' => $row->reminder_date,
                 'owner_name' => $row->user_full_name,
@@ -830,6 +960,7 @@ class QontakDashboardV2Service
             ]);
 
         $this->applyPipelineFilter($query, $effectiveFilters, 'd');
+        $this->applyTeamFilter($query, $effectiveFilters, 'd');
 
         $rows = $query
             ->select([
@@ -901,6 +1032,7 @@ class QontakDashboardV2Service
             ]);
 
         $this->applyPipelineFilter($query, $filters, 'd');
+        $this->applyTeamFilter($query, $filters, 'd');
 
         $rows = $query
             ->select([
@@ -967,6 +1099,7 @@ class QontakDashboardV2Service
             ]);
 
         $this->applyPipelineFilter($sub, $filters, 'd');
+        $this->applyTeamFilter($sub, $filters, 'd');
 
         $sub
             ->select('h.crm_deal_id', DB::raw('MIN(h.moved_date) as won_at'))
