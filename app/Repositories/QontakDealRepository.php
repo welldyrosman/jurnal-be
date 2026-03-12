@@ -22,11 +22,24 @@ class QontakDealRepository
             ->format('Y-m-d H:i:s');
     }
 
+    private function firstScalar(mixed $value): mixed
+    {
+        if (is_array($value)) {
+            return $value[0] ?? null;
+        }
+
+        return $value;
+    }
+
     public function upsertMany(array $items): void
     {
         $now = now();
 
         $data = collect($items)->map(function ($deal) use ($now) {
+            $crmCompanyId = $this->firstScalar($deal['crm_company_id'] ?? null);
+            $crmSourceId = $this->firstScalar($deal['crm_source_id'] ?? null);
+            $crmSourceName = $this->firstScalar($deal['crm_source_name'] ?? null);
+
             return [
                 'deal_id'               => $deal['id'],
                 'name'                  => $deal['name'] ?? null,
@@ -51,10 +64,10 @@ class QontakDealRepository
                 'crm_lost_reason_name'  => $deal['crm_lost_reason_name'] ?? null,
 
                 // FK ke tabel lokal
-                'qontak_company_id'     => $this->mapCompanyId($deal['crm_company_id'] ?? null),
+                'qontak_company_id'     => $this->mapCompanyId($crmCompanyId),
                 'qontak_source_id'      => $this->mapSourceId(
-                    $deal['crm_source_id'] ?? null,
-                    $deal['crm_source_name'] ?? null
+                    $crmSourceId,
+                    $crmSourceName
                 ),
 
                 'start_date'            => $this->normalizeDate($deal['start_date'] ?? null),
@@ -130,7 +143,7 @@ class QontakDealRepository
 
             $productMap = DB::table('qontak_products')
                 ->whereIn('crm_product_id', $crmProductIds)
-                ->pluck('name', 'crm_product_id');
+                ->pluck('id', 'crm_product_id');
 
             foreach ($ids as $i => $crmProductId) {
                 $dealModel->products()->create([

@@ -16,6 +16,7 @@ use Illuminate\Validation\ValidationException;
 use Carbon\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Http;
 
 class DashboardController extends Controller
 {
@@ -290,6 +291,206 @@ class DashboardController extends Controller
         } catch (\Exception $e) {
 
             return $this->errorResponse('Gagal mengambil laporan', 500, [
+                'detail' => $e->getMessage()
+            ]);
+        }
+    }
+
+    public function qontak2EmbedCard(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'embed_url' => 'required|url',
+                'start_month' => 'nullable|date_format:Y-m-d',
+                'end_month' => 'nullable|date_format:Y-m-d',
+                'date_filter' => 'nullable|string|max:100',
+            ]);
+
+            if ($validator->fails()) {
+                throw new ValidationException($validator);
+            }
+
+            $embedUrl = (string) $request->input('embed_url');
+            $parsed = parse_url($embedUrl);
+            $host = strtolower($parsed['host'] ?? '');
+            $path = (string) ($parsed['path'] ?? '');
+
+            if ($host !== 'qontak-report.mekari.com' || !str_starts_with($path, '/api/embed/dashboard/')) {
+                return $this->errorResponse('Embed URL tidak valid. Host/path tidak diizinkan.', 422);
+            }
+
+            $query = array_filter([
+                'start_month' => $request->input('start_month'),
+                'end_month' => $request->input('end_month'),
+                'date_filter' => $request->input('date_filter'),
+            ], fn($value) => $value !== null && $value !== '');
+
+            $response = Http::acceptJson()
+                ->timeout(45)
+                ->retry(2, 300, null, false)
+                ->get($embedUrl, $query);
+
+            if ($response->failed()) {
+                return $this->errorResponse(
+                    'Gagal mengambil data Dashboard Qontak 2',
+                    $response->status(),
+                    ['detail' => trim($response->body())]
+                );
+            }
+
+            $contentType = strtolower((string) $response->header('content-type'));
+            $payload = str_contains($contentType, 'application/json')
+                ? $response->json()
+                : ['raw' => $response->body()];
+
+            return $this->successResponse([
+                'payload' => $payload,
+                'meta' => [
+                    'status_code' => $response->status(),
+                    'url' => $embedUrl,
+                    'query' => $query,
+                ],
+            ], 'Data Dashboard Qontak 2 berhasil diambil');
+        } catch (ValidationException $e) {
+            return $this->errorResponse('Data yang diberikan tidak valid', 422, $e->errors());
+        } catch (\Throwable $e) {
+            return $this->errorResponse('Gagal mengambil data Dashboard Qontak 2', 500, [
+                'detail' => $e->getMessage()
+            ]);
+        }
+    }
+
+    public function qontak2EmbedCards(Request $request): JsonResponse
+    {
+        try {
+            $validator = Validator::make($request->all(), [
+                'dashboard_embed_url' => 'required|url',
+                'card_ids' => 'required|array|min:1',
+                'card_ids.*' => 'integer|min:1',
+                'start_month' => 'nullable|date_format:Y-m-d',
+                'end_month' => 'nullable|date_format:Y-m-d',
+                'date_filter' => 'nullable|string|max:100',
+            ]);
+
+            if ($validator->fails()) {
+                throw new ValidationException($validator);
+            }
+
+            $dashboardEmbedUrl = (string) $request->input('dashboard_embed_url');
+            $parsed = parse_url($dashboardEmbedUrl);
+            $host = strtolower($parsed['host'] ?? '');
+            $path = (string) ($parsed['path'] ?? '');
+
+            if ($host !== 'qontak-report.mekari.com' || !str_starts_with($path, '/api/embed/dashboard/')) {
+                return $this->errorResponse('Dashboard embed URL tidak valid. Host/path tidak diizinkan.', 422);
+            }
+
+            $query = array_filter([
+                'start_month' => $request->input('start_month'),
+                'end_month' => $request->input('end_month'),
+                'date_filter' => $request->input('date_filter'),
+            ], fn($value) => $value !== null && $value !== '');
+
+            $scheme = $parsed['scheme'] ?? 'https';
+            $dashboardBaseUrl = "{$scheme}://{$host}{$path}";
+
+            $dashboardResponse = Http::acceptJson()
+                ->timeout(45)
+                ->retry(2, 300, null, false)
+                ->get($dashboardBaseUrl, $query);
+
+            if ($dashboardResponse->failed()) {
+                return $this->errorResponse(
+                    'Gagal mengambil metadata dashboard embed',
+                    $dashboardResponse->status(),
+                    ['detail' => trim($dashboardResponse->body())]
+                );
+            }
+
+            $dashboardPayload = $dashboardResponse->json();
+            $dashcards = collect($dashboardPayload['dashcards'] ?? []);
+            $cardToDashcardMap = [];
+            foreach ($dashcards as $dashcard) {
+                $dashcardId = (int) ($dashcard['id'] ?? 0);
+                if ($dashcardId <= 0) {
+                    continue;
+                }
+
+                $cardId = (int) ($dashcard['card_id'] ?? 0);
+                if ($cardId > 0) {
+                    $cardToDashcardMap[$cardId] = $dashcardId;
+                }
+
+                foreach (($dashcard['series'] ?? []) as $seriesCard) {
+                    $seriesCardId = (int) ($seriesCard['id'] ?? 0);
+                    if ($seriesCardId > 0) {
+                        $cardToDashcardMap[$seriesCardId] = $dashcardId;
+                    }
+                }
+            }
+
+            $requestedCardIds = collect($request->input('card_ids', []))
+                ->map(fn($id) => (int) $id)
+                ->filter(fn($id) => $id > 0)
+                ->values();
+
+            $cards = [];
+            $errors = [];
+
+            foreach ($requestedCardIds as $cardId) {
+                $dashcardId = $cardToDashcardMap[$cardId] ?? null;
+                if (!$dashcardId) {
+                    $errors[] = [
+                        'card_id' => $cardId,
+                        'message' => 'Card ID tidak ditemukan di dashboard embed',
+                    ];
+                    continue;
+                }
+
+                $cardUrl = $dashboardBaseUrl . "/dashcard/{$dashcardId}/card/{$cardId}";
+                $cardResponse = Http::acceptJson()
+                    ->timeout(45)
+                    ->retry(2, 300, null, false)
+                    ->get($cardUrl, $query);
+
+                if ($cardResponse->failed()) {
+                    $errors[] = [
+                        'card_id' => $cardId,
+                        'dashcard_id' => $dashcardId,
+                        'status_code' => $cardResponse->status(),
+                        'message' => trim($cardResponse->body()),
+                    ];
+                    continue;
+                }
+
+                $contentType = strtolower((string) $cardResponse->header('content-type'));
+                $payload = str_contains($contentType, 'application/json')
+                    ? $cardResponse->json()
+                    : ['raw' => $cardResponse->body()];
+
+                $cards[] = [
+                    'card_id' => $cardId,
+                    'dashcard_id' => $dashcardId,
+                    'status_code' => $cardResponse->status(),
+                    'payload' => $payload,
+                ];
+            }
+
+            return $this->successResponse([
+                'dashboard' => [
+                    'id' => $dashboardPayload['id'] ?? null,
+                    'name' => $dashboardPayload['name'] ?? null,
+                    'url' => $dashboardBaseUrl,
+                ],
+                'query' => $query,
+                'cards' => $cards,
+                'errors' => $errors,
+                'card_map' => $cardToDashcardMap,
+            ], 'Data cards Dashboard Qontak 2 berhasil diambil');
+        } catch (ValidationException $e) {
+            return $this->errorResponse('Data yang diberikan tidak valid', 422, $e->errors());
+        } catch (\Throwable $e) {
+            return $this->errorResponse('Gagal mengambil data cards Dashboard Qontak 2', 500, [
                 'detail' => $e->getMessage()
             ]);
         }

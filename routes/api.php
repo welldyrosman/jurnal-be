@@ -10,6 +10,7 @@ use App\Http\Controllers\CompanyController;
 use App\Http\Controllers\PipelineController;
 use App\Http\Controllers\QontakDealController;
 use App\Http\Controllers\QontakDealReportController;
+use App\Http\Controllers\QontakDashboardV2Controller;
 use App\Http\Controllers\ReportController;
 use App\Http\Controllers\RolePermissionController;
 use App\Http\Controllers\SidebarMenuController;
@@ -29,6 +30,10 @@ Route::prefix('auth')->group(function () {
 Route::middleware('auth:sanctum')->group(function () {
     Route::post('/dashboard', [DashboardController::class, 'index']);
     Route::post('/dashboard-qontak', [DashboardController::class, 'indexQontak']);
+    Route::post('/dashboard-qontak-2', [QontakDashboardV2Controller::class, 'index']);
+    Route::post('/dashboard-qontak-2/content/{code}', [QontakDashboardV2Controller::class, 'content']);
+    Route::get('/dashboard-qontak-2/embed-card', [DashboardController::class, 'qontak2EmbedCard']);
+    Route::post('/dashboard-qontak-2/embed-cards', [DashboardController::class, 'qontak2EmbedCards']);
 });
 
 Route::prefix('v1')->middleware('auth:sanctum')->group(function () {

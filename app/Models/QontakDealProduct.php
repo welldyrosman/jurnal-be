@@ -8,7 +8,8 @@ class QontakDealProduct extends Model
 {
     protected $fillable = [
         'qontak_deal_id',
-        'product_id',
+        'qontak_product_id',
+        'crm_product_id',
         'product_name',
         'quantity',
         'price',

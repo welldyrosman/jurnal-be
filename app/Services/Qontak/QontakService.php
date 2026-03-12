@@ -188,6 +188,14 @@ class QontakService
         return $this->get('/qontak/crm/pipelines', ['page' => $page]);
     }
 
+    public function getPipelineStages(string|int $pipelineId, int $page = 1, int $perPage = 100): array
+    {
+        return $this->get('/qontak/crm/pipelines/' . $pipelineId . '/stages', [
+            'page' => $page,
+            'per_page' => $perPage,
+        ]);
+    }
+
     public function getCompany(string $id): array
     {
         return $this->get('/qontak/crm/companies/' . $id);
@@ -217,6 +225,35 @@ class QontakService
     {
         return $this->post('/qontak/crm/deals', $data);
     }
+
+    public function getTasks(int $page = 1, int $perPage = 100): array
+    {
+        return $this->get('/qontak/crm/tasks', [
+            'page' => $page,
+            'per_page' => $perPage,
+        ]);
+    }
+
+    public function getDealStageHistory(string|int $dealId): array
+    {
+        return $this->get('/qontak/crm/deals/' . $dealId . '/stage_history');
+    }
+
+    public function getDealTimeline(string|int $dealId): array
+    {
+        return $this->get('/qontak/crm/deals/' . $dealId . '/timeline');
+    }
+
+    public function getContactTimeline(string|int $contactId): array
+    {
+        return $this->get('/qontak/crm/contacts/' . $contactId . '/timeline');
+    }
+
+    public function getCompanyTimeline(string|int $companyId): array
+    {
+        return $this->get('/qontak/crm/companies/' . $companyId . '/timeline');
+    }
+
     public function getProductAssociation(array $data): array
     {
         return $this->get('/qontak/crm/associations', $data);
